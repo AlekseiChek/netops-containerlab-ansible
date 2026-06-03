@@ -1,0 +1,28 @@
+---
+# Make-before-break for an IS-IS transit node: set/clear the overload-bit.
+# overload-bit advertised => neighbors stop using this node for transit, but
+# the adjacency stays up (graceful) — RFC 3787 / classic SP drain primitive.
+
+- name: "DRAIN — set IS-IS overload-bit ({{ inventory_hostname }})"
+  ansible.builtin.command: >
+    vtysh -c "configure terminal"
+          -c "router isis {{ isis_process }}"
+          -c "set-overload-bit"
+          -c "end"
+          -c "write memory"
+  when: drain_state | default('drain') == 'drain'
+  changed_when: true
+
+- name: "Wait for traffic to reroute around {{ inventory_hostname }}"
+  ansible.builtin.pause: { seconds: "{{ drain_wait }}" }
+  when: drain_state | default('drain') == 'drain'
+
+- name: "UNDRAIN — clear IS-IS overload-bit ({{ inventory_hostname }})"
+  ansible.builtin.command: >
+    vtysh -c "configure terminal"
+          -c "router isis {{ isis_process }}"
+          -c "no set-overload-bit"
+          -c "end"
+          -c "write memory"
+  when: drain_state | default('drain') == 'undrain'
+  changed_when: true

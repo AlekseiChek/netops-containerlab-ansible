@@ -1,0 +1,5 @@
+---
+artifacts_dir: "{{ playbook_dir }}/../artifacts"
+convergence_wait: 12       # seconds to let IGP/BGP reconverge after a change
+drain_wait: 8              # seconds to let traffic reroute after drain
+deploy_route: "100.64.0.0/24"   # benign blackhole route used as the demo change

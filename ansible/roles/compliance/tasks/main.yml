@@ -1,0 +1,29 @@
+---
+# Semantic checks not visible in a pre/post diff — policy hygiene.
+- name: Get running-config
+  ansible.builtin.command: vtysh -c "show running-config"
+  register: run_cfg
+  changed_when: false
+
+- name: IS-IS process present
+  ansible.builtin.assert:
+    that: "'router isis' in run_cfg.stdout"
+    fail_msg: "{{ inventory_hostname }}: IS-IS not configured"
+
+- name: BGP router-id set (no auto-select)
+  ansible.builtin.assert:
+    that: "'bgp router-id' in run_cfg.stdout"
+    fail_msg: "{{ inventory_hostname }}: BGP router-id missing"
+
+- name: Loopback present
+  ansible.builtin.assert:
+    that: "'interface lo' in run_cfg.stdout"
+    fail_msg: "{{ inventory_hostname }}: no loopback configured"
+    success_msg: "{{ inventory_hostname }}: compliance OK"
+
+- name: Save compliance report
+  ansible.builtin.copy:
+    dest: "{{ artifacts_dir }}/compliance_{{ inventory_hostname }}.txt"
+    content: |
+      Compliance {{ inventory_hostname }} — IS-IS / router-id / loopback checked: OK
+  delegate_to: localhost

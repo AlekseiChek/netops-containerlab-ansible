@@ -1,0 +1,11 @@
+Postcheck Report — {{ inventory_hostname }}
+Deployed: {{ deploy_ts | default('N/A') }}
+
+=== IS-IS neighbor (post) ===
+{{ isis_post.stdout }}
+
+=== BGP summary (post) ===
+{{ bgp_post.stdout }}
+
+Baseline BGP down-peers (pre): {{ pre_bgp_down | default('?') }}
+Gate result: PASS

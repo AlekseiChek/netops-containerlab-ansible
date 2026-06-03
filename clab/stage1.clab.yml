@@ -1,0 +1,23 @@
+name: stage1
+# Stage-1 lab — Full-FRR: IS-IS L2 + iBGP AS65000 + RR (rr1) + 2 eBGP CEs.
+# See wiki: lab-stage1-isis-ibgp-rr. Deploy: sudo containerlab deploy -t stage1.clab.yml
+topology:
+  defaults:
+    kind: linux
+    image: frrouting/frr:latest
+  nodes:
+    rr1: { binds: ["configs/rr1/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: rr, location: lab} }
+    p1:  { binds: ["configs/p1/frr.conf:/etc/frr/frr.conf",  "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: p,  location: lab} }
+    p2:  { binds: ["configs/p2/frr.conf:/etc/frr/frr.conf",  "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: p,  location: lab} }
+    pe1: { binds: ["configs/pe1/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: lab} }
+    pe2: { binds: ["configs/pe2/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: lab} }
+    ce1: { binds: ["configs/ce1/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: ce, location: lab} }
+    ce2: { binds: ["configs/ce2/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: ce, location: lab} }
+  links:
+    - endpoints: ["p1:eth1",  "p2:eth1"]    # 10.0.0.0/31
+    - endpoints: ["p1:eth2",  "rr1:eth1"]   # 10.0.0.2/31
+    - endpoints: ["p2:eth2",  "rr1:eth2"]   # 10.0.0.4/31
+    - endpoints: ["pe1:eth1", "p1:eth3"]    # 10.0.0.6/31
+    - endpoints: ["pe2:eth1", "p2:eth3"]    # 10.0.0.8/31
+    - endpoints: ["pe1:eth2", "ce1:eth1"]   # 10.1.1.0/31
+    - endpoints: ["pe2:eth2", "ce2:eth1"]   # 10.1.2.0/31

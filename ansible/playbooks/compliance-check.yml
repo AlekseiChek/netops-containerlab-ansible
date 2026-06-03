@@ -1,0 +1,6 @@
+---
+- name: Compliance audit (standalone, read-only)
+  hosts: "{{ target | default('core') }}"
+  gather_facts: false
+  roles: [compliance]
+  tags: [compliance]

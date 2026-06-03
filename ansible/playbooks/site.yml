@@ -1,0 +1,20 @@
+---
+# Safe rolling change on the IS-IS core: one node per wave, stop on first failure.
+- name: NetOps safe change — drain -> precheck -> deploy -> postcheck -> undrain
+  hosts: "{{ target | default('core') }}"
+  gather_facts: false
+  serial: 1                 # blast radius: one device per wave
+  any_errors_fatal: true    # a failed health gate halts the whole rollout
+  tasks:
+    - import_role: { name: drain }
+      vars: { drain_state: drain }
+      tags: [drain]
+    - import_role: { name: precheck }
+      tags: [precheck]
+    - import_role: { name: deploy }
+      tags: [deploy]
+    - import_role: { name: postcheck }   # deterministic gate (assert fails => stop)
+      tags: [postcheck]
+    - import_role: { name: drain }
+      vars: { drain_state: undrain }
+      tags: [undrain]

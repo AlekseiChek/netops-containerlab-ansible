@@ -1,0 +1,8 @@
+---
+collections:
+  - name: community.docker      # docker connection plugin (uses docker CLI, no Python SDK)
+  - name: ansible.netcommon
+  # production multi-vendor (not used against the FRR lab):
+  # - name: junipernetworks.junos
+  # - name: cisco.iosxr
+  # - name: arista.eos

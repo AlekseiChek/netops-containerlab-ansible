@@ -1,0 +1,9 @@
+# Ansible runtime artifacts
+ansible/artifacts/*.txt
+*.retry
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
