@@ -1,24 +1,24 @@
 ---
-# Rolling reboot of the core with ZERO customer-traffic loss — PROVEN by a
+# Rolling reboot of the VyOS core with ZERO customer-traffic loss — PROVEN by a
 # continuous probe that runs IN PARALLEL across the whole maintenance window.
 #
 # Per node, one at a time (serial:1, stop on first failure):
-#   start continuous ce1->ce2 probe (background)  <-- begins BEFORE we touch the node
-#   DRAIN (make-before-break)
-#   restart routing daemons isisd+bgpd (control-plane reload; watchfrr/container stay up)
+#   start continuous ce1->ce2 probe (background)   <-- begins BEFORE touching the node
+#   DRAIN (vyos_config: IS-IS overload-bit + BGP graceful-shutdown)
+#   reboot = restart FRR inside VyOS (RP reload; container/SSH stay up, drain persists)
 #   wait until FRR + all BGP sessions are back
 #   UNDRAIN
-#   stop probe -> GATE: the probe that spanned the entire window must show 0% loss
+#   stop probe -> GATE: the probe spanning the entire window must show 0% loss
 #
-# "Reboot" = restart the routing stack (RP reload). Full power-cycle alternative:
-#   docker restart {{ ansible_host }}
-# Safe because the fabric is redundant AND transit nodes carry
-# `set-overload-bit on-startup 90` (a freshly-restarted node stays out of transit
-# until BGP converges). Probe interval 0.2s = 5 packets/s, so a single lost packet shows.
+# Why restart-FRR (not docker restart): VyOS container PID 1 is the VyOS init, not
+# watchfrr, so `systemctl restart frr` bounces routing daemons while SSH and the
+# committed running-config (incl. the drain) stay intact. Full power-cycle
+# alternative: docker restart {{ ansible_host }} (reloads config.boot, loses drain).
+# Probe interval 0.2s = 5 pkt/s, so a single lost packet shows.
 #
 # Run:  ansible-playbook playbooks/safe-reboot.yml      (or -e target=site_b)
 
-- name: Safe rolling reboot (make-before-break, zero loss proven by parallel probe)
+- name: Safe rolling reboot (VyOS, zero loss proven by parallel probe)
   hosts: "{{ target | default('core') }}"
   gather_facts: false
   serial: 1
@@ -40,14 +40,8 @@
       ansible.builtin.import_role: { name: drain }
       vars: { drain_state: drain }
 
-    - name: "Reboot {{ inventory_hostname }} — bounce routing daemons (control-plane / RP reload)"
-      # In frrouting/frr, watchfrr is the container's PID 1 and respawns any daemon that
-      # dies. So we kill isisd+bgpd; watchfrr restarts them → protocols bounce and
-      # reconverge while watchfrr/zebra/netns/interfaces stay up (real RP-reload analog).
-      # Re-arms `set-overload-bit on-startup`. (frrinit.sh restart <daemon> isn't supported
-      # by this image; full power-cycle alternative: docker restart {{ ansible_host }}.)
-      ansible.builtin.shell: >
-        docker exec {{ ansible_host }} sh -c 'pkill -x bgpd; pkill -x isisd; true'
+    - name: "Reboot {{ inventory_hostname }} — restart FRR inside VyOS (RP reload)"
+      ansible.builtin.command: "docker exec {{ ansible_host }} systemctl restart frr"
       delegate_to: localhost
       changed_when: true
 

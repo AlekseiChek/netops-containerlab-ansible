@@ -125,7 +125,8 @@ sudo containerlab destroy -t stage1.clab.yml --cleanup
 ## Run the Ansible pipeline
 ```bash
 cd ansible
-ansible all -m ping                       # docker-exec reachability
+ansible-galaxy collection install -r requirements.yml   # vyos.vyos, community.docker, ansible.netcommon
+ansible-playbook playbooks/facts.yml      # VyOS core reachability over SSH (vyos.vyos)
 ansible-playbook playbooks/site.yml       # full safe change on the core (serial:1)
 
 # selective:

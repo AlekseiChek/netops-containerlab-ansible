@@ -1,15 +1,10 @@
 ---
-# The "change". Demo = push a benign blackhole static route (observable,
-# reversible, harmless). In production this is the rendered config push
-# (Ansible junos_config / NAPALM replace) — same role slot.
-
+# The "change". Demo = push a benign blackhole static route on VyOS (observable,
+# reversible, harmless). In production this is the rendered config push.
 - name: "Deploy change — add blackhole route {{ deploy_route }}"
-  ansible.builtin.command: >
-    vtysh -c "configure terminal"
-          -c "ip route {{ deploy_route }} blackhole"
-          -c "end"
-          -c "write memory"
-  changed_when: true
+  vyos.vyos.vyos_config:
+    lines:
+      - set protocols static route {{ deploy_route }} blackhole
 
 - name: Record deploy timestamp
   ansible.builtin.set_fact:

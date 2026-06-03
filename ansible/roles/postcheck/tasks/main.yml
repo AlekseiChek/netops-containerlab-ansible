@@ -1,43 +1,44 @@
 ---
-# Deterministic health gate: re-read state, compare vs precheck baseline.
+# Deterministic health gate on VyOS: re-read state, compare vs precheck baseline.
 # A failed assert stops the play (any_errors_fatal) => the change is blocked.
 
 - name: Wait for reconvergence
   ansible.builtin.pause: { seconds: "{{ convergence_wait }}" }
 
-- name: Get IS-IS neighbors (post)
-  ansible.builtin.command: vtysh -c "show isis neighbor"
-  register: isis_post
-  changed_when: false
-
-- name: Get iBGP summary (post)
-  ansible.builtin.command: vtysh -c "show bgp ipv4 unicast summary"
-  register: bgp_post
-  changed_when: false
-
-- name: Verify the change landed (blackhole route present)
-  ansible.builtin.command: vtysh -c "show ip route {{ deploy_route }}"
-  register: route_check
+- name: Re-read IS-IS / BGP / deployed route
+  vyos.vyos.vyos_command:
+    commands:
+      - show isis neighbor
+      - show bgp summary
+      - show ip route {{ deploy_route }}
+  register: post
   changed_when: false
 
 - name: GATE — IS-IS adjacency still Up
   ansible.builtin.assert:
-    that: "'Up' in isis_post.stdout"
+    that: "'Up' in post.stdout[0]"
     fail_msg: "{{ inventory_hostname }}: IS-IS adjacency lost post-deploy — ROLLBACK"
 
 - name: GATE — BGP did not degrade (down-peers not increased)
   ansible.builtin.assert:
-    that: "(bgp_post.stdout | regex_findall('Active|Idle|Connect') | length) <= (pre_bgp_down | int)"
+    that: "(post.stdout[1] | regex_findall('Active|Idle|Connect') | length) <= (pre_bgp_down | int)"
     fail_msg: "{{ inventory_hostname }}: BGP peers degraded post-deploy — ROLLBACK"
 
 - name: GATE — change is actually present
   ansible.builtin.assert:
-    that: "'blackhole' in route_check.stdout or 'Null' in route_check.stdout"
+    that: "'blackhole' in post.stdout[2] or 'blackhole' in post.stdout[2] | lower"
     fail_msg: "{{ inventory_hostname }}: deployed route missing — change did not apply"
     success_msg: "{{ inventory_hostname }}: health gate PASS"
 
 - name: Write postcheck/diff report
-  ansible.builtin.template:
-    src: diff_report.j2
+  ansible.builtin.copy:
     dest: "{{ artifacts_dir }}/postcheck_{{ inventory_hostname }}.txt"
+    content: |
+      === POSTCHECK {{ inventory_hostname }} ===  deployed: {{ deploy_ts | default('N/A') }}
+      baseline BGP down-peers (pre): {{ pre_bgp_down | default('?') }}
+      --- IS-IS neighbor (post) ---
+      {{ post.stdout[0] }}
+      --- BGP summary (post) ---
+      {{ post.stdout[1] }}
+      Gate: PASS
   delegate_to: localhost
