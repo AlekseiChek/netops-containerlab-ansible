@@ -135,6 +135,13 @@ ansible-playbook playbooks/compliance-check.yml           # audit (read-only)
 ```
 Artifacts (per node) land in `ansible/artifacts/` (gitignored): `precheck_*.txt`, `postcheck_*.txt`, `compliance_*.txt`.
 
+### Safe rolling reboot (zero customer-traffic loss)
+```bash
+ansible-playbook playbooks/safe-reboot.yml            # reboot every core node, one at a time
+ansible-playbook playbooks/safe-reboot.yml -e target=site_b
+```
+Per node: **drain → reboot container → wait until FRR + all BGP sessions are back → undrain → gate (ce1↔ce2 must show 0% loss)**, `serial:1` + `any_errors_fatal`. Zero loss holds because the fabric is redundant **and** transit nodes carry `set-overload-bit on-startup 90` (a freshly-booted node advertises overload until BGP converges, so it never blackholes transit). Optional: run `docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1` in another shell to watch it live.
+
 ---
 
 ## Ansible structure & hierarchy

@@ -1,0 +1,62 @@
+---
+# Rolling reboot of the core with ZERO customer-traffic loss.
+# Per node, one at a time (serial:1, stop on first failure):
+#   DRAIN (make-before-break) -> reboot the container -> wait until FRR + all BGP
+#   sessions are back -> UNDRAIN -> data-plane gate: ce1<->ce2 must show 0% loss.
+# Safe because the fabric is redundant (2 RR, PEs/RRs dual-attached, CEs dual-homed).
+#
+# Run:   ansible-playbook playbooks/safe-reboot.yml
+#        ansible-playbook playbooks/safe-reboot.yml -e target=site_b   # subset
+# Watch (optional, separate shell): continuous customer ping
+#   docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1
+#
+# NOTE for guaranteed zero loss on a freshly-booted transit node, the IS-IS config
+# should carry `set-overload-bit on-startup 90` (advertise overload until BGP settles).
+# See README "safe reboot" — ask to enable it on p*/pe*/rr* if not present.
+
+- name: Safe rolling reboot (make-before-break, zero customer-traffic loss)
+  hosts: "{{ target | default('core') }}"
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    boot_retries: 40
+    boot_delay: 3
+  tasks:
+    - name: "DRAIN {{ inventory_hostname }} (overload-bit + BGP graceful-shutdown)"
+      ansible.builtin.import_role: { name: drain }
+      vars: { drain_state: drain }
+
+    - name: "Reboot {{ inventory_hostname }} — restart its container"
+      ansible.builtin.command: "docker restart {{ ansible_host }}"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: "Wait for FRR to answer again on {{ inventory_hostname }}"
+      ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c 'show version'"
+      delegate_to: localhost
+      register: ver
+      until: ver.rc == 0
+      retries: "{{ boot_retries }}"
+      delay: "{{ boot_delay }}"
+      changed_when: false
+
+    - name: "Wait until ALL BGP sessions on {{ inventory_hostname }} are re-Established"
+      ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c 'show bgp ipv4 unicast summary'"
+      delegate_to: localhost
+      register: bsum
+      until: "bsum.rc == 0 and not (bsum.stdout | regex_search('Active|Idle|Connect|OpenSent|OpenConfirm'))"
+      retries: "{{ boot_retries }}"
+      delay: "{{ boot_delay }}"
+      changed_when: false
+
+    - name: "UNDRAIN {{ inventory_hostname }} (back in service)"
+      ansible.builtin.import_role: { name: drain }
+      vars: { drain_state: undrain }
+
+    - name: "Data-plane gate — ce1 <-> ce2 must show 0% loss after rebooting {{ inventory_hostname }}"
+      ansible.builtin.command: "docker exec clab-stage1-ce1 ping -c 5 -I 198.51.100.1 203.0.113.1"
+      delegate_to: localhost
+      register: png
+      changed_when: false
+      failed_when: "'0% packet loss' not in png.stdout"
