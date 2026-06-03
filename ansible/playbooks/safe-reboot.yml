@@ -60,3 +60,7 @@
       register: png
       changed_when: false
       failed_when: "'0% packet loss' not in png.stdout"
+
+    - name: "GATE PASS — {{ inventory_hostname }} rebooted, customer traffic intact"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ png.stdout_lines | select('search','packet loss') | first }}"
