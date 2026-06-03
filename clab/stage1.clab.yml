@@ -12,7 +12,7 @@ topology:
     rr2: { binds: ["configs/rr2/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: rr, location: core} }
     p1:  { binds: ["configs/p1/frr.conf:/etc/frr/frr.conf",  "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: p,  location: core} }
     p2:  { binds: ["configs/p2/frr.conf:/etc/frr/frr.conf",  "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: p,  location: core} }
-    pe1: { binds: ["configs/pe1/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: site-a} }
+    pe1: { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/pe1/config.boot:/opt/vyatta/etc/config/config.boot"], labels: {role: pe, location: site-a, nos: vyos} }
     pe2: { binds: ["configs/pe2/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: site-a} }
     pe3: { binds: ["configs/pe3/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: site-b} }
     pe4: { binds: ["configs/pe4/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: site-b} }
