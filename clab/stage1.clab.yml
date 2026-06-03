@@ -8,16 +8,18 @@ topology:
     kind: linux
     image: frrouting/frr:latest
   nodes:
-    rr1: { binds: ["configs/rr1/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: rr, location: core} }
-    rr2: { binds: ["configs/rr2/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: rr, location: core} }
-    p1:  { binds: ["configs/p1/frr.conf:/etc/frr/frr.conf",  "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: p,  location: core} }
-    p2:  { binds: ["configs/p2/frr.conf:/etc/frr/frr.conf",  "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: p,  location: core} }
+    # --- core: VyOS (sysoleg/vyos-container), config.boot bind-mounted ---
+    rr1: { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/rr1/config.boot:/opt/vyatta/etc/config/config.boot"], labels: {role: rr, location: core, nos: vyos} }
+    rr2: { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/rr2/config.boot:/opt/vyatta/etc/config/config.boot"], labels: {role: rr, location: core, nos: vyos} }
+    p1:  { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/p1/config.boot:/opt/vyatta/etc/config/config.boot"],  labels: {role: p,  location: core, nos: vyos} }
+    p2:  { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/p2/config.boot:/opt/vyatta/etc/config/config.boot"],  labels: {role: p,  location: core, nos: vyos} }
     pe1: { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/pe1/config.boot:/opt/vyatta/etc/config/config.boot"], labels: {role: pe, location: site-a, nos: vyos} }
-    pe2: { binds: ["configs/pe2/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: site-a} }
-    pe3: { binds: ["configs/pe3/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: site-b} }
-    pe4: { binds: ["configs/pe4/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: pe, location: site-b} }
-    ce1: { binds: ["configs/ce1/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: ce, location: site-a} }
-    ce2: { binds: ["configs/ce2/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: ce, location: site-b} }
+    pe2: { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/pe2/config.boot:/opt/vyatta/etc/config/config.boot"], labels: {role: pe, location: site-a, nos: vyos} }
+    pe3: { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/pe3/config.boot:/opt/vyatta/etc/config/config.boot"], labels: {role: pe, location: site-b, nos: vyos} }
+    pe4: { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/pe4/config.boot:/opt/vyatta/etc/config/config.boot"], labels: {role: pe, location: site-b, nos: vyos} }
+    # --- customer edge: stay FRR (light) ---
+    ce1: { image: frrouting/frr:latest, binds: ["configs/ce1/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: ce, location: site-a, nos: frr} }
+    ce2: { image: frrouting/frr:latest, binds: ["configs/ce2/frr.conf:/etc/frr/frr.conf", "daemons:/etc/frr/daemons", "vtysh.conf:/etc/frr/vtysh.conf"], labels: {role: ce, location: site-b, nos: frr} }
   links:
     # core
     - endpoints: ["p1:eth1",  "p2:eth1"]    # 10.0.0.0/31
