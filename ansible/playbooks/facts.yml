@@ -1,0 +1,21 @@
+---
+# Stage-1 connectivity check: can Ansible reach the VyOS core over SSH?
+# Run:  ansible-playbook playbooks/facts.yml
+- name: VyOS core reachability + facts
+  hosts: core
+  gather_facts: false
+  tasks:
+    - name: Gather VyOS facts
+      vyos.vyos.vyos_facts:
+        gather_subset: min
+
+    - name: Show version / hostname
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} reachable — VyOS {{ ansible_net_version | default('?') }} ({{ ansible_net_hostname | default('?') }})"
+
+    - name: Quick BGP summary
+      vyos.vyos.vyos_command:
+        commands: ["show bgp ipv4 unicast summary"]
+      register: bgp
+    - ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ bgp.stdout_lines[0] | select('search','Established|Active|Idle|never') | list | length }} non-trivial peer lines"
