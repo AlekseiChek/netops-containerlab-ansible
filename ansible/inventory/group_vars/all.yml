@@ -1,4 +1,5 @@
 ---
+ansible_python_interpreter: auto_silent   # FRR container has python3; silence discovery warning
 artifacts_dir: "{{ playbook_dir }}/../artifacts"
 convergence_wait: 12       # seconds to let IGP/BGP reconverge after a change
 drain_wait: 8              # seconds to let traffic reroute after drain
