@@ -31,7 +31,7 @@
   tasks:
     - name: "Start continuous ce1->ce2 probe (background) BEFORE touching {{ inventory_hostname }}"
       ansible.builtin.shell: |
-        docker exec clab-stage1-ce1 sh -c 'pkill -f "{{ probe_dst }}" 2>/dev/null; : > /tmp/probe.log'
+        docker exec clab-stage1-ce1 sh -c 'pkill -x ping 2>/dev/null; : > /tmp/probe.log'
         docker exec -d clab-stage1-ce1 sh -c 'ping -i 0.2 -I {{ probe_src }} {{ probe_dst }} >> /tmp/probe.log 2>&1'
       delegate_to: localhost
       changed_when: false
@@ -69,7 +69,7 @@
 
     - name: "Stop the probe and read its summary"
       ansible.builtin.shell: >
-        docker exec clab-stage1-ce1 sh -c 'pkill -INT -f "{{ probe_dst }}"; sleep 1; tail -n 4 /tmp/probe.log'
+        docker exec clab-stage1-ce1 sh -c 'pkill -INT -x ping 2>/dev/null || true; sleep 1; tail -n 4 /tmp/probe.log'
       delegate_to: localhost
       register: probe
       changed_when: false
