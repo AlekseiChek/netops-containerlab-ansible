@@ -40,14 +40,14 @@
       ansible.builtin.import_role: { name: drain }
       vars: { drain_state: drain }
 
-    - name: "Reboot {{ inventory_hostname }} — restart routing daemons (control-plane / RP reload)"
-      # NB: in frrouting/frr, watchfrr is the container's PID 1, so `frrinit.sh restart`
-      # (no arg) kills PID 1 and the whole container (rc 137). Restart the individual
-      # daemons instead: bgpd + isisd bounce and reconverge, watchfrr/zebra/netns/interfaces
-      # stay up. Re-arms `set-overload-bit on-startup`. Full power-cycle: docker restart.
+    - name: "Reboot {{ inventory_hostname }} — bounce routing daemons (control-plane / RP reload)"
+      # In frrouting/frr, watchfrr is the container's PID 1 and respawns any daemon that
+      # dies. So we kill isisd+bgpd; watchfrr restarts them → protocols bounce and
+      # reconverge while watchfrr/zebra/netns/interfaces stay up (real RP-reload analog).
+      # Re-arms `set-overload-bit on-startup`. (frrinit.sh restart <daemon> isn't supported
+      # by this image; full power-cycle alternative: docker restart {{ ansible_host }}.)
       ansible.builtin.shell: >
-        docker exec {{ ansible_host }}
-        sh -c '/usr/lib/frr/frrinit.sh restart isisd; /usr/lib/frr/frrinit.sh restart bgpd'
+        docker exec {{ ansible_host }} sh -c 'pkill -x bgpd; pkill -x isisd; true'
       delegate_to: localhost
       changed_when: true
 
