@@ -1,8 +1,10 @@
 ---
 # Rolling reboot of the core with ZERO customer-traffic loss.
 # Per node, one at a time (serial:1, stop on first failure):
-#   DRAIN (make-before-break) -> reboot the container -> wait until FRR + all BGP
-#   sessions are back -> UNDRAIN -> data-plane gate: ce1<->ce2 must show 0% loss.
+#   DRAIN (make-before-break) -> restart FRR (control-plane reboot) -> wait until
+#   FRR + all BGP sessions are back -> UNDRAIN -> data-plane gate: ce1<->ce2 0% loss.
+#   "Reboot" here = restart the routing stack (RP reload); container/interfaces stay up.
+#   For a full power-cycle, swap the reboot task for: docker restart {{ ansible_host }}.
 # Safe because the fabric is redundant (2 RR, PEs/RRs dual-attached, CEs dual-homed).
 #
 # Run:   ansible-playbook playbooks/safe-reboot.yml
@@ -27,8 +29,14 @@
       ansible.builtin.import_role: { name: drain }
       vars: { drain_state: drain }
 
-    - name: "Reboot {{ inventory_hostname }} — restart its container"
-      ansible.builtin.command: "docker restart {{ ansible_host }}"
+    - name: "Reboot {{ inventory_hostname }} — restart FRR (control-plane / RP reload)"
+      # Restarts the routing stack only: BGP/IS-IS sessions bounce and reconverge,
+      # but the container, netns and data-plane interfaces stay up (closest analog to
+      # a real router RP reload). Re-arms `set-overload-bit on-startup`.
+      # Full power-cycle alternative:  docker restart {{ ansible_host }}
+      ansible.builtin.shell: >
+        docker exec {{ ansible_host }}
+        sh -c '/usr/lib/frr/frrinit.sh restart || service frr restart'
       delegate_to: localhost
       changed_when: true
 
