@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="600" viewBox="0 0 760 600" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="760" height="600" fill="#ffffff"/>
+  <text x="380" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#0F2A3F">netops-lab — redundant IS-IS / iBGP fabric</text>
+
+  <!-- tier labels -->
+  <g font-size="11" fill="#7A8794" text-anchor="start">
+    <text x="16" y="92">CUSTOMERS</text>
+    <text x="16" y="206">PE (edge)</text>
+    <text x="16" y="330">P (core)</text>
+    <text x="16" y="470">ROUTE REFLECTORS</text>
+  </g>
+
+  <!-- LINKS (drawn first, boxes cover the ends) -->
+  <!-- eBGP: CE dual-homed to both PE (green) -->
+  <g stroke="#27AE60" stroke-width="2">
+    <line x1="210" y1="88" x2="210" y2="192"/>
+    <line x1="210" y1="88" x2="560" y2="192"/>
+    <line x1="560" y1="88" x2="560" y2="192"/>
+    <line x1="560" y1="88" x2="210" y2="192"/>
+  </g>
+  <!-- IS-IS L2: PE/RR dual-attached to both P + single p1-p2 (blue) -->
+  <g stroke="#2D9CDB" stroke-width="2">
+    <line x1="210" y1="214" x2="210" y2="300"/>
+    <line x1="210" y1="214" x2="560" y2="300"/>
+    <line x1="560" y1="214" x2="560" y2="300"/>
+    <line x1="560" y1="214" x2="210" y2="300"/>
+    <line x1="270" y1="322" x2="500" y2="322"/>
+    <line x1="210" y1="440" x2="210" y2="344"/>
+    <line x1="210" y1="440" x2="560" y2="344"/>
+    <line x1="560" y1="440" x2="560" y2="344"/>
+    <line x1="560" y1="440" x2="210" y2="344"/>
+  </g>
+  <!-- iBGP RR <-> RR (dashed grey) -->
+  <line x1="270" y1="462" x2="500" y2="462" stroke="#8A98A6" stroke-width="2" stroke-dasharray="6 4"/>
+
+  <!-- NODES -->
+  <g>
+    <!-- helper styling repeated inline -->
+    <!-- CE -->
+    <g>
+      <rect x="150" y="66" width="120" height="44" rx="7" fill="#EAF7EF" stroke="#27AE60" stroke-width="1.5"/>
+      <text x="210" y="86" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F2A3F">ce1</text>
+      <text x="210" y="101" text-anchor="middle" font-size="10" fill="#4F5963">AS65001 · 198.51.100.0/24</text>
+    </g>
+    <g>
+      <rect x="500" y="66" width="120" height="44" rx="7" fill="#EAF7EF" stroke="#27AE60" stroke-width="1.5"/>
+      <text x="560" y="86" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F2A3F">ce2</text>
+      <text x="560" y="101" text-anchor="middle" font-size="10" fill="#4F5963">AS65002 · 203.0.113.0/24</text>
+    </g>
+    <!-- PE -->
+    <g>
+      <rect x="150" y="192" width="120" height="44" rx="7" fill="#EFF3F7" stroke="#0F2A3F" stroke-width="1.5"/>
+      <text x="210" y="212" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F2A3F">pe1</text>
+      <text x="210" y="227" text-anchor="middle" font-size="10" fill="#4F5963">lo 192.0.2.1</text>
+    </g>
+    <g>
+      <rect x="500" y="192" width="120" height="44" rx="7" fill="#EFF3F7" stroke="#0F2A3F" stroke-width="1.5"/>
+      <text x="560" y="212" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F2A3F">pe2</text>
+      <text x="560" y="227" text-anchor="middle" font-size="10" fill="#4F5963">lo 192.0.2.2</text>
+    </g>
+    <!-- P -->
+    <g>
+      <rect x="150" y="300" width="120" height="44" rx="7" fill="#E7ECF1" stroke="#0F2A3F" stroke-width="1.5"/>
+      <text x="210" y="320" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F2A3F">p1</text>
+      <text x="210" y="335" text-anchor="middle" font-size="10" fill="#4F5963">lo 192.0.2.11</text>
+    </g>
+    <g>
+      <rect x="500" y="300" width="120" height="44" rx="7" fill="#E7ECF1" stroke="#0F2A3F" stroke-width="1.5"/>
+      <text x="560" y="320" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F2A3F">p2</text>
+      <text x="560" y="335" text-anchor="middle" font-size="10" fill="#4F5963">lo 192.0.2.12</text>
+    </g>
+    <!-- RR -->
+    <g>
+      <rect x="150" y="440" width="120" height="44" rx="7" fill="#FBF1DA" stroke="#E0A526" stroke-width="1.5"/>
+      <text x="210" y="460" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F2A3F">rr1 (RR)</text>
+      <text x="210" y="475" text-anchor="middle" font-size="10" fill="#4F5963">lo .101 · cluster 1.1.1.1</text>
+    </g>
+    <g>
+      <rect x="500" y="440" width="120" height="44" rx="7" fill="#FBF1DA" stroke="#E0A526" stroke-width="1.5"/>
+      <text x="560" y="460" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F2A3F">rr2 (RR)</text>
+      <text x="560" y="475" text-anchor="middle" font-size="10" fill="#4F5963">lo .102 · cluster 2.2.2.2</text>
+    </g>
+  </g>
+
+  <!-- legend -->
+  <g font-size="11" fill="#4F5963">
+    <line x1="160" y1="525" x2="195" y2="525" stroke="#27AE60" stroke-width="2"/>
+    <text x="202" y="529">eBGP (CE dual-homed to both PEs)</text>
+    <line x1="160" y1="545" x2="195" y2="545" stroke="#2D9CDB" stroke-width="2"/>
+    <text x="202" y="549">IS-IS L2 link (PE/RR dual-attached to both P; one p1–p2 link)</text>
+    <line x1="160" y1="565" x2="195" y2="565" stroke="#8A98A6" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="202" y="569">iBGP: every PE/P peers BOTH rr1 &amp; rr2; rr1 ↔ rr2 peer</text>
+  </g>
+</svg>

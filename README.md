@@ -10,21 +10,9 @@ Docker only, **no KVM/licenses**. Runs on a laptop or NAS.
 
 ## Network scheme
 
-```
-   ce1 (AS65001, dual-homed)            ce2 (AS65002, dual-homed)
-   198.51.100.0/24                      203.0.113.0/24
-      │       │                            │       │
-      │ eBGP  └──────────┐      ┌──────────┘ eBGP  │
-    [pe1]               [pe2]  (each CE peers BOTH PEs)
-      │  \               /  │
-      │   \             /   │
-      │    \           /    │
-    [p1]════════════════[p2]          P-core (IS-IS L2)
-      \\      \       /      //
-       \\      \     /      //
-      [rr1]     \   /     [rr2]        2 Route Reflectors (redundant)
-       (every PE/P peers BOTH rr1 and rr2; rr1 <-> rr2 also peer)
-```
+![Network topology](docs/topology.svg)
+
+<sub>Editable source: [`docs/topology.drawio`](docs/topology.drawio) (open in [draw.io](https://app.diagrams.net)).</sub>
 
 - **IGP:** IS-IS Level 2, area `49.0001`, all core links; PEs and RRs are **dual-attached** to both P routers.
 - **Overlay:** iBGP AS `65000`, **two route reflectors** `rr1`+`rr2` (separate cluster-ids); every client peers both; `rr1`↔`rr2` peer too → no RR single point of failure.

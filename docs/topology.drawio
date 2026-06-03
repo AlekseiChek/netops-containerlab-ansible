@@ -1,0 +1,40 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="netops-lab topology" id="netops-lab">
+    <mxGraphModel dx="900" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="760" pageHeight="600" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- nodes -->
+        <mxCell id="ce1" value="ce1&#10;AS65001 / 198.51.100.0/24" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF7EF;strokeColor=#27AE60;" vertex="1" parent="1"><mxGeometry x="150" y="66" width="140" height="44" as="geometry"/></mxCell>
+        <mxCell id="ce2" value="ce2&#10;AS65002 / 203.0.113.0/24" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF7EF;strokeColor=#27AE60;" vertex="1" parent="1"><mxGeometry x="480" y="66" width="140" height="44" as="geometry"/></mxCell>
+        <mxCell id="pe1" value="pe1&#10;lo 192.0.2.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF3F7;strokeColor=#0F2A3F;" vertex="1" parent="1"><mxGeometry x="160" y="192" width="120" height="44" as="geometry"/></mxCell>
+        <mxCell id="pe2" value="pe2&#10;lo 192.0.2.2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF3F7;strokeColor=#0F2A3F;" vertex="1" parent="1"><mxGeometry x="490" y="192" width="120" height="44" as="geometry"/></mxCell>
+        <mxCell id="p1" value="p1&#10;lo 192.0.2.11" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E7ECF1;strokeColor=#0F2A3F;" vertex="1" parent="1"><mxGeometry x="160" y="300" width="120" height="44" as="geometry"/></mxCell>
+        <mxCell id="p2" value="p2&#10;lo 192.0.2.12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E7ECF1;strokeColor=#0F2A3F;" vertex="1" parent="1"><mxGeometry x="490" y="300" width="120" height="44" as="geometry"/></mxCell>
+        <mxCell id="rr1" value="rr1 (RR)&#10;lo .101 / cluster 1.1.1.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBF1DA;strokeColor=#E0A526;" vertex="1" parent="1"><mxGeometry x="150" y="440" width="140" height="44" as="geometry"/></mxCell>
+        <mxCell id="rr2" value="rr2 (RR)&#10;lo .102 / cluster 2.2.2.2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBF1DA;strokeColor=#E0A526;" vertex="1" parent="1"><mxGeometry x="480" y="440" width="140" height="44" as="geometry"/></mxCell>
+
+        <!-- eBGP (green) -->
+        <mxCell style="endArrow=none;strokeColor=#27AE60;html=1;" edge="1" parent="1" source="ce1" target="pe1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#27AE60;html=1;" edge="1" parent="1" source="ce1" target="pe2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#27AE60;html=1;" edge="1" parent="1" source="ce2" target="pe1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#27AE60;html=1;" edge="1" parent="1" source="ce2" target="pe2"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- IS-IS (blue) -->
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="pe1" target="p1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="pe1" target="p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="pe2" target="p1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="pe2" target="p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="p1" target="p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="rr1" target="p1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="rr1" target="p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="rr2" target="p1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell style="endArrow=none;strokeColor=#2D9CDB;html=1;" edge="1" parent="1" source="rr2" target="p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- iBGP RR-RR (dashed) -->
+        <mxCell style="endArrow=none;dashed=1;strokeColor=#8A98A6;html=1;" edge="1" parent="1" source="rr1" target="rr2"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
