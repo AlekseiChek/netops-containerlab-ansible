@@ -14,20 +14,23 @@ Docker only, **no KVM/licenses**. Runs on a laptop or NAS.
 
 <sub>Editable source: [`docs/topology.drawio`](docs/topology.drawio) (open in [draw.io](https://app.diagrams.net)).</sub>
 
-- **IGP:** IS-IS Level 2, area `49.0001`, all core links; PEs and RRs are **dual-attached** to both P routers.
+- **Two sites:** site-A = `ce1`↔`pe1`/`pe2`, site-B = `ce2`↔`pe3`/`pe4`. Lets you roll changes **wave-by-site**.
+- **IGP:** IS-IS Level 2, area `49.0001`; all four PEs and both RRs are **dual-attached** to both P routers (RRs carry control-plane only, not transit).
 - **Overlay:** iBGP AS `65000`, **two route reflectors** `rr1`+`rr2` (separate cluster-ids); every client peers both; `rr1`↔`rr2` peer too → no RR single point of failure.
-- **Edge:** `ce1`/`ce2` are **dual-homed** eBGP customers (each peers pe1 **and** pe2) → a PE can be drained without dropping the customer.
+- **Edge:** `ce1`/`ce2` are **dual-homed** eBGP customers → a PE can be drained without dropping the customer.
 
-| Node | Role | Loopback | IS-IS system-id |
-|------|------|----------|-----------------|
-| pe1 | PE | 192.0.2.1 | 1920.0000.2001 |
-| pe2 | PE | 192.0.2.2 | 1920.0000.2002 |
-| p1  | P  | 192.0.2.11 | 1920.0000.2011 |
-| p2  | P  | 192.0.2.12 | 1920.0000.2012 |
-| rr1 | RR | 192.0.2.101 | 1920.0000.2101 |
-| rr2 | RR | 192.0.2.102 | 1920.0000.2102 |
-| ce1 | CE (dual-homed) | 198.51.100.1 | (eBGP only) |
-| ce2 | CE (dual-homed) | 203.0.113.1 | (eBGP only) |
+| Node | Role | Site | Loopback | IS-IS system-id |
+|------|------|------|----------|-----------------|
+| pe1 | PE | site-A | 192.0.2.1 | 1920.0000.2001 |
+| pe2 | PE | site-A | 192.0.2.2 | 1920.0000.2002 |
+| pe3 | PE | site-B | 192.0.2.3 | 1920.0000.2003 |
+| pe4 | PE | site-B | 192.0.2.4 | 1920.0000.2004 |
+| p1  | P  | core | 192.0.2.11 | 1920.0000.2011 |
+| p2  | P  | core | 192.0.2.12 | 1920.0000.2012 |
+| rr1 | RR | core | 192.0.2.101 | 1920.0000.2101 |
+| rr2 | RR | core | 192.0.2.102 | 1920.0000.2102 |
+| ce1 | CE (dual-homed → pe1/pe2) | site-A | 198.51.100.1 | (eBGP only) |
+| ce2 | CE (dual-homed → pe3/pe4) | site-B | 203.0.113.1 | (eBGP only) |
 
 ---
 
@@ -99,13 +102,16 @@ docker exec clab-stage1-rr2 vtysh -c "show bgp ipv4 unicast summary"    # rr2: 4
 docker exec clab-stage1-pe1 vtysh -c "show ip route 203.0.113.0/24"     # ce2 prefix (ECMP via pe2 paths)
 docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1        # customer-to-customer
 ```
-> Fresh deploys can hit an iBGP startup race (BGP before IS-IS converges). Fix once: `for n in rr1 rr2 pe1 pe2 p1 p2; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done`.
+> Fresh deploys can hit an iBGP startup race (BGP before IS-IS converges). Fix once: `for n in rr1 rr2 p1 p2 pe1 pe2 pe3 pe4; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done`.
 
-**Redundancy / drain demo** (what the 2-RR + dual-homing buys you):
+**Redundancy / drain demo** (what 2 RRs + dual-homing + 2 sites buys you):
 ```bash
-# drain pe1 (IS-IS overload + BGP graceful-shutdown) — CE traffic shifts to pe2, no outage:
-cd ../ansible && ansible-playbook playbooks/site.yml -e target=pe1
-# during/after: ce1<->ce2 keeps pinging; rr1 down would still leave rr2 reflecting.
+cd ../ansible
+# drain one PE (IS-IS overload + BGP graceful-shutdown) — CE traffic shifts to its pair, no outage:
+ansible-playbook playbooks/site.yml -e target=pe1
+# roll a whole site as a wave (one PE at a time, gate between):
+ansible-playbook playbooks/site.yml -e target=site_b
+# meanwhile customer-to-customer keeps working (ce1 site-A ↔ ce2 site-B):
 docker exec clab-stage1-ce1 ping -c3 -I 198.51.100.1 203.0.113.1
 ```
 
