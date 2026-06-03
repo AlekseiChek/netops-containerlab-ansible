@@ -17,10 +17,10 @@ protocols {
         net 49.0001.1920.0000.2001.00
         level level-2
         interface eth1 {
-            network-type point-to-point
+            network point-to-point
         }
         interface eth2 {
-            network-type point-to-point
+            network point-to-point
         }
         interface lo {
             passive
