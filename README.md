@@ -11,20 +11,24 @@ Docker only, **no KVM/licenses**. Runs on a laptop or NAS.
 ## Network scheme
 
 ```
-   ce1 (FRR, AS65001)                ce2 (FRR, AS65002)
-   198.51.100.0/24                    203.0.113.0/24
-        │                                  │ 
-        │ eBGP          [rr1]              │ eBGP
-        │             /       \            │ 
-        │           /           \          │ 
-      [pe1]──────[p1]───────────[p2]──────[pe2]
-      
-
+   ce1 (AS65001, dual-homed)            ce2 (AS65002, dual-homed)
+   198.51.100.0/24                      203.0.113.0/24
+      │       │                            │       │
+      │ eBGP  └──────────┐      ┌──────────┘ eBGP  │
+    [pe1]               [pe2]  (each CE peers BOTH PEs)
+      │  \               /  │
+      │   \             /   │
+      │    \           /    │
+    [p1]════════════════[p2]          P-core (IS-IS L2)
+      \\      \       /      //
+       \\      \     /      //
+      [rr1]     \   /     [rr2]        2 Route Reflectors (redundant)
+       (every PE/P peers BOTH rr1 and rr2; rr1 <-> rr2 also peer)
 ```
 
-- **IGP:** IS-IS Level 2, area `49.0001`, all core links.
-- **Overlay:** iBGP AS `65000`, `rr1` reflects to all clients (pe1/pe2/p1/p2).
-- **Edge:** `ce1`/`ce2` are eBGP customers; their /24s are reachable end-to-end across the fabric.
+- **IGP:** IS-IS Level 2, area `49.0001`, all core links; PEs and RRs are **dual-attached** to both P routers.
+- **Overlay:** iBGP AS `65000`, **two route reflectors** `rr1`+`rr2` (separate cluster-ids); every client peers both; `rr1`↔`rr2` peer too → no RR single point of failure.
+- **Edge:** `ce1`/`ce2` are **dual-homed** eBGP customers (each peers pe1 **and** pe2) → a PE can be drained without dropping the customer.
 
 | Node | Role | Loopback | IS-IS system-id |
 |------|------|----------|-----------------|
@@ -33,15 +37,16 @@ Docker only, **no KVM/licenses**. Runs on a laptop or NAS.
 | p1  | P  | 192.0.2.11 | 1920.0000.2011 |
 | p2  | P  | 192.0.2.12 | 1920.0000.2012 |
 | rr1 | RR | 192.0.2.101 | 1920.0000.2101 |
-| ce1 | CE | 198.51.100.1 | (eBGP only) |
-| ce2 | CE | 203.0.113.1 | (eBGP only) |
+| rr2 | RR | 192.0.2.102 | 1920.0000.2102 |
+| ce1 | CE (dual-homed) | 198.51.100.1 | (eBGP only) |
+| ce2 | CE (dual-homed) | 203.0.113.1 | (eBGP only) |
 
 ---
 
 ## What this demonstrates
 - Lab-as-code: a multi-node SP fabric from one YAML file (containerlab).
-- IS-IS + iBGP + Route Reflector + eBGP customer edge on FRR.
-- **Make-before-break** change safety: IS-IS overload-bit drain/undrain.
+- IS-IS + iBGP + **redundant Route Reflectors (2)** + **dual-homed** eBGP customer edge on FRR.
+- **Make-before-break** change safety: IS-IS overload-bit **+ BGP graceful-shutdown (RFC 8326)** drain/undrain — meaningful *because* the fabric is redundant (drain pe1 → CE fails over to pe2; drain rr1 → clients keep rr2).
 - **Progressive rollout** (blast-radius control): `serial: 1` + `any_errors_fatal`.
 - **Evidence-based health gate:** precheck snapshot → deploy → postcheck asserts (IS-IS up, BGP not degraded, change present) — rollback on *measured* regression, not a timer.
 - Idempotent, role-structured, multi-vendor-ready Ansible (FRR today; Junos/IOS-XR/EOS branches noted).
@@ -100,12 +105,21 @@ sudo containerlab inspect -t stage1.clab.yml
 
 Verify the control plane:
 ```bash
-docker exec clab-stage1-pe1 vtysh -c "show isis neighbor"
-docker exec clab-stage1-rr1 vtysh -c "show bgp ipv4 unicast summary"   # 4 clients Established
-docker exec clab-stage1-pe1 vtysh -c "show ip route 203.0.113.0/24"    # ce2 prefix via RR
-docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1       # customer-to-customer
+docker exec clab-stage1-pe1 vtysh -c "show isis neighbor"               # pe1 sees p1 AND p2
+docker exec clab-stage1-rr1 vtysh -c "show bgp ipv4 unicast summary"    # rr1: 4 clients + rr2
+docker exec clab-stage1-rr2 vtysh -c "show bgp ipv4 unicast summary"    # rr2: 4 clients + rr1
+docker exec clab-stage1-pe1 vtysh -c "show ip route 203.0.113.0/24"     # ce2 prefix (ECMP via pe2 paths)
+docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1        # customer-to-customer
 ```
-> Fresh deploys can hit an iBGP startup race (BGP starts before IS-IS converges). Fix once: `docker exec clab-stage1-rr1 vtysh -c "clear bgp *"`.
+> Fresh deploys can hit an iBGP startup race (BGP before IS-IS converges). Fix once: `for n in rr1 rr2 pe1 pe2 p1 p2; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done`.
+
+**Redundancy / drain demo** (what the 2-RR + dual-homing buys you):
+```bash
+# drain pe1 (IS-IS overload + BGP graceful-shutdown) — CE traffic shifts to pe2, no outage:
+cd ../ansible && ansible-playbook playbooks/site.yml -e target=pe1
+# during/after: ce1<->ce2 keeps pinging; rr1 down would still leave rr2 reflecting.
+docker exec clab-stage1-ce1 ping -c3 -I 198.51.100.1 203.0.113.1
+```
 
 Teardown:
 ```bash

@@ -1,27 +1,34 @@
 ---
-# Make-before-break for an IS-IS transit node: set/clear the overload-bit.
-# overload-bit advertised => neighbors stop using this node for transit, but
-# the adjacency stays up (graceful) — RFC 3787 / classic SP drain primitive.
+# Make-before-break for a redundant fabric. Two levers, both reversible:
+#  - IS-IS overload-bit  -> neighbors stop using this node as transit (adjacency stays up)
+#  - BGP graceful-shutdown (RFC 8326) -> this node's advertised paths become least-preferred,
+#    so dual-homed CEs / the other RR take over. Adjacencies/sessions stay up the whole time.
 
-- name: "DRAIN — set IS-IS overload-bit ({{ inventory_hostname }})"
+- name: "DRAIN — IS-IS overload-bit + BGP graceful-shutdown ({{ inventory_hostname }})"
   ansible.builtin.command: >
     vtysh -c "configure terminal"
           -c "router isis {{ isis_process }}"
           -c "set-overload-bit"
+          -c "exit"
+          -c "router bgp {{ bgp_as }}"
+          -c "bgp graceful-shutdown"
           -c "end"
           -c "write memory"
   when: drain_state | default('drain') == 'drain'
   changed_when: true
 
-- name: "Wait for traffic to reroute around {{ inventory_hostname }}"
+- name: "Wait for traffic/sessions to shift to the redundant path"
   ansible.builtin.pause: { seconds: "{{ drain_wait }}" }
   when: drain_state | default('drain') == 'drain'
 
-- name: "UNDRAIN — clear IS-IS overload-bit ({{ inventory_hostname }})"
+- name: "UNDRAIN — clear overload-bit + graceful-shutdown ({{ inventory_hostname }})"
   ansible.builtin.command: >
     vtysh -c "configure terminal"
           -c "router isis {{ isis_process }}"
           -c "no set-overload-bit"
+          -c "exit"
+          -c "router bgp {{ bgp_as }}"
+          -c "no bgp graceful-shutdown"
           -c "end"
           -c "write memory"
   when: drain_state | default('drain') == 'undrain'
