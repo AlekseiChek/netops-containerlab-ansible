@@ -11,15 +11,15 @@ Docker only, **no KVM/licenses**. Runs on a laptop or NAS.
 ## Network scheme
 
 ```
-   ce1 (FRR, AS65001)                 ce2 (FRR, AS65002)
-   198.51.100.0/24                     203.0.113.0/24
-        │ eBGP                              │ eBGP
+   ce1 (FRR, AS65001)                ce2 (FRR, AS65002)
+   198.51.100.0/24                    203.0.113.0/24
+        │                                  │ 
+        │ eBGP          [rr1]              │ eBGP
+        │             /       \            │ 
+        │           /           \          │ 
       [pe1]──────[p1]───────────[p2]──────[pe2]
-                   │  \         /  │
-                   │   \       /   │
-                   │    \     /    │
-                   │     [rr1]     │        rr1 = iBGP Route Reflector
-                   └── IS-IS L2 core (FRR) ─┘
+      
+
 ```
 
 - **IGP:** IS-IS Level 2, area `49.0001`, all core links.
