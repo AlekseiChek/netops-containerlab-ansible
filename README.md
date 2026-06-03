@@ -140,7 +140,7 @@ Artifacts (per node) land in `ansible/artifacts/` (gitignored): `precheck_*.txt`
 ansible-playbook playbooks/safe-reboot.yml            # reboot every core node, one at a time
 ansible-playbook playbooks/safe-reboot.yml -e target=site_b
 ```
-Per node: **drain → restart FRR (control-plane / RP reload) → wait until FRR + all BGP sessions are back → undrain → gate (ce1↔ce2 must show 0% loss)**, `serial:1` + `any_errors_fatal`. "Reboot" restarts the routing stack only — the container, netns and data-plane interfaces stay up (closest analog to a real router RP reload; swap the task for `docker restart` for a full power-cycle). Zero loss holds because the fabric is redundant **and** transit nodes carry `set-overload-bit on-startup 90` (a freshly-restarted node advertises overload until BGP converges, so it never blackholes transit). Optional live watch: `docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1` in another shell.
+Per node (`serial:1` + `any_errors_fatal`): **start a continuous ce1↔ce2 probe in the background → drain → restart FRR (RP reload) → wait until FRR + all BGP sessions are back → undrain → stop the probe → GATE: the probe that spanned the whole window must show 0% loss.** The ICMP measurement runs **in parallel** with the convergence window (0.2 s interval → a single lost packet shows), so it proves zero loss *during* the reboot, not just after. "Reboot" restarts the routing stack only — container/netns/interfaces stay up (real RP-reload analog; swap for `docker restart` for a full power-cycle). Zero loss holds because the fabric is redundant **and** transit nodes carry `set-overload-bit on-startup 90` (a freshly-restarted node stays out of transit until BGP converges).
 
 ---
 

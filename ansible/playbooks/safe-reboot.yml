@@ -1,22 +1,24 @@
 ---
-# Rolling reboot of the core with ZERO customer-traffic loss.
+# Rolling reboot of the core with ZERO customer-traffic loss — PROVEN by a
+# continuous probe that runs IN PARALLEL across the whole maintenance window.
+#
 # Per node, one at a time (serial:1, stop on first failure):
-#   DRAIN (make-before-break) -> restart FRR (control-plane reboot) -> wait until
-#   FRR + all BGP sessions are back -> UNDRAIN -> data-plane gate: ce1<->ce2 0% loss.
-#   "Reboot" here = restart the routing stack (RP reload); container/interfaces stay up.
-#   For a full power-cycle, swap the reboot task for: docker restart {{ ansible_host }}.
-# Safe because the fabric is redundant (2 RR, PEs/RRs dual-attached, CEs dual-homed).
+#   start continuous ce1->ce2 probe (background)  <-- begins BEFORE we touch the node
+#   DRAIN (make-before-break)
+#   restart FRR (control-plane / RP reload; container & interfaces stay up)
+#   wait until FRR + all BGP sessions are back
+#   UNDRAIN
+#   stop probe -> GATE: the probe that spanned the entire window must show 0% loss
 #
-# Run:   ansible-playbook playbooks/safe-reboot.yml
-#        ansible-playbook playbooks/safe-reboot.yml -e target=site_b   # subset
-# Watch (optional, separate shell): continuous customer ping
-#   docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1
+# "Reboot" = restart the routing stack (RP reload). Full power-cycle alternative:
+#   docker restart {{ ansible_host }}
+# Safe because the fabric is redundant AND transit nodes carry
+# `set-overload-bit on-startup 90` (a freshly-restarted node stays out of transit
+# until BGP converges). Probe interval 0.2s = 5 packets/s, so a single lost packet shows.
 #
-# NOTE for guaranteed zero loss on a freshly-booted transit node, the IS-IS config
-# should carry `set-overload-bit on-startup 90` (advertise overload until BGP settles).
-# See README "safe reboot" — ask to enable it on p*/pe*/rr* if not present.
+# Run:  ansible-playbook playbooks/safe-reboot.yml      (or -e target=site_b)
 
-- name: Safe rolling reboot (make-before-break, zero customer-traffic loss)
+- name: Safe rolling reboot (make-before-break, zero loss proven by parallel probe)
   hosts: "{{ target | default('core') }}"
   gather_facts: false
   serial: 1
@@ -24,16 +26,21 @@
   vars:
     boot_retries: 40
     boot_delay: 3
+    probe_src: 198.51.100.1     # ce1 loopback
+    probe_dst: 203.0.113.1      # ce2 loopback
   tasks:
+    - name: "Start continuous ce1->ce2 probe (background) BEFORE touching {{ inventory_hostname }}"
+      ansible.builtin.shell: |
+        docker exec clab-stage1-ce1 sh -c 'pkill -f "{{ probe_dst }}" 2>/dev/null; : > /tmp/probe.log'
+        docker exec -d clab-stage1-ce1 sh -c 'ping -i 0.2 -I {{ probe_src }} {{ probe_dst }} >> /tmp/probe.log 2>&1'
+      delegate_to: localhost
+      changed_when: false
+
     - name: "DRAIN {{ inventory_hostname }} (overload-bit + BGP graceful-shutdown)"
       ansible.builtin.import_role: { name: drain }
       vars: { drain_state: drain }
 
     - name: "Reboot {{ inventory_hostname }} — restart FRR (control-plane / RP reload)"
-      # Restarts the routing stack only: BGP/IS-IS sessions bounce and reconverge,
-      # but the container, netns and data-plane interfaces stay up (closest analog to
-      # a real router RP reload). Re-arms `set-overload-bit on-startup`.
-      # Full power-cycle alternative:  docker restart {{ ansible_host }}
       ansible.builtin.shell: >
         docker exec {{ ansible_host }}
         sh -c '/usr/lib/frr/frrinit.sh restart || service frr restart'
@@ -62,13 +69,15 @@
       ansible.builtin.import_role: { name: drain }
       vars: { drain_state: undrain }
 
-    - name: "Data-plane gate — ce1 <-> ce2 must show 0% loss after rebooting {{ inventory_hostname }}"
-      ansible.builtin.command: "docker exec clab-stage1-ce1 ping -c 5 -I 198.51.100.1 203.0.113.1"
+    - name: "Stop the probe and read its summary"
+      ansible.builtin.shell: >
+        docker exec clab-stage1-ce1 sh -c 'pkill -INT -f "{{ probe_dst }}"; sleep 1; tail -n 4 /tmp/probe.log'
       delegate_to: localhost
-      register: png
+      register: probe
       changed_when: false
-      failed_when: "'0% packet loss' not in png.stdout"
 
-    - name: "GATE PASS — {{ inventory_hostname }} rebooted, customer traffic intact"
-      ansible.builtin.debug:
-        msg: "{{ inventory_hostname }}: {{ png.stdout_lines | select('search','packet loss') | first }}"
+    - name: "GATE — ZERO loss across the entire {{ inventory_hostname }} maintenance window"
+      ansible.builtin.assert:
+        that: "'0% packet loss' in probe.stdout"
+        fail_msg: "PACKET LOSS while rebooting {{ inventory_hostname }} → {{ probe.stdout }}"
+        success_msg: "{{ inventory_hostname }} OK → {{ probe.stdout_lines | select('search','packet loss') | first }}"
