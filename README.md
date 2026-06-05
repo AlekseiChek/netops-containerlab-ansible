@@ -1,10 +1,9 @@
-# netops-lab — IS-IS/iBGP fabric + safe Ansible change pipeline
+# netops-lab — redundant SP fabric (VyOS + FRR) with a safe Ansible change pipeline
 
-A self-contained **NetOps lab**: a service-provider-style FRR fabric built with **containerlab**, plus an **Ansible** pipeline that changes it the way production networks do — **make-before-break drain → precheck → deploy → postcheck → undrain**, one node per wave, with a **deterministic health gate** that stops the rollout on regression.
+A self-contained **network operations lab** you can run on a laptop or NAS — **no licenses, no KVM, just Docker**.
+It builds a small but realistic **service-provider fabric** (IS-IS + iBGP + route reflectors + dual-homed customers) and ships an **Ansible pipeline** that changes and reboots it the way real carriers do: **drain traffic → change → verify → restore**, one device at a time, stopping automatically if anything degrades.
 
-Docker only, **no KVM/licenses**. Runs on a laptop or NAS.
-
-> Design notes & rationale: based on Google SRE / Orion progressive-rollout practice and differential ("impact report") verification. Lab is **Stage 1** of a larger NetOps CI/CD design (NetBox → render → Batfish → test → deploy).
+> New to this? You only need three tools — **Docker** (runs the routers as containers), **containerlab** (wires them into a topology from one file), and **Ansible** (automates changes). Step-by-step install is below; you can copy-paste everything.
 
 ---
 
@@ -12,186 +11,207 @@ Docker only, **no KVM/licenses**. Runs on a laptop or NAS.
 
 ![Network topology](docs/topology.svg)
 
-<sub>Editable source: [`docs/topology.drawio`](docs/topology.drawio) (open in [draw.io](https://app.diagrams.net)).</sub>
+<sub>Editable source: [`docs/topology.drawio`](docs/topology.drawio) — open in [draw.io](https://app.diagrams.net).</sub>
 
-- **Two sites:** site-A = `ce1`↔`pe1`/`pe2`, site-B = `ce2`↔`pe3`/`pe4`. Lets you roll changes **wave-by-site**.
-- **IGP:** IS-IS Level 2, area `49.0001`; all four PEs and both RRs are **dual-attached** to both P routers (RRs carry control-plane only, not transit).
-- **Overlay:** iBGP AS `65000`, **two route reflectors** `rr1`+`rr2` (separate cluster-ids); every client peers both; `rr1`↔`rr2` peer too → no RR single point of failure.
-- **Edge:** `ce1`/`ce2` are **dual-homed** eBGP customers → a PE can be drained without dropping the customer.
+- **Core (8 × VyOS):** `p1`/`p2` (P routers), `rr1`/`rr2` (route reflectors), `pe1`–`pe4` (provider edge).
+- **Customers (2 × FRR):** `ce1`, `ce2` — each **dual-homed** to two PEs.
+- **Two sites:** site-A = `ce1`↔`pe1`/`pe2`, site-B = `ce2`↔`pe3`/`pe4` → you can roll changes **site by site**.
+- **IGP:** IS-IS Level 2 (area `49.0001`); every PE and RR is **dual-attached** to both P routers.
+- **Overlay:** iBGP AS `65000`, **two route reflectors** (no single point of failure); customers ride eBGP.
 
-| Node | Role | Site | Loopback | IS-IS system-id |
-|------|------|------|----------|-----------------|
-| pe1 | PE | site-A | 192.0.2.1 | 1920.0000.2001 |
-| pe2 | PE | site-A | 192.0.2.2 | 1920.0000.2002 |
-| pe3 | PE | site-B | 192.0.2.3 | 1920.0000.2003 |
-| pe4 | PE | site-B | 192.0.2.4 | 1920.0000.2004 |
-| p1  | P  | core | 192.0.2.11 | 1920.0000.2011 |
-| p2  | P  | core | 192.0.2.12 | 1920.0000.2012 |
-| rr1 | RR | core | 192.0.2.101 | 1920.0000.2101 |
-| rr2 | RR | core | 192.0.2.102 | 1920.0000.2102 |
-| ce1 | CE (dual-homed → pe1/pe2) | site-A | 198.51.100.1 | (eBGP only) |
-| ce2 | CE (dual-homed → pe3/pe4) | site-B | 203.0.113.1 | (eBGP only) |
+| Node | Role | NOS | Site | Loopback |
+|------|------|-----|------|----------|
+| pe1–pe2 | PE | VyOS | site-A | 192.0.2.1 / .2 |
+| pe3–pe4 | PE | VyOS | site-B | 192.0.2.3 / .4 |
+| p1 / p2 | P (core) | VyOS | core | 192.0.2.11 / .12 |
+| rr1 / rr2 | Route Reflector | VyOS | core | 192.0.2.101 / .102 |
+| ce1 | Customer (→ pe1/pe2) | FRR | site-A | 198.51.100.1 |
+| ce2 | Customer (→ pe3/pe4) | FRR | site-B | 203.0.113.1 |
 
 ---
 
-## What this demonstrates
-- Lab-as-code: a multi-node SP fabric from one YAML file (containerlab).
-- IS-IS + iBGP + **redundant Route Reflectors (2)** + **dual-homed** eBGP customer edge on FRR.
-- **Make-before-break** change safety: IS-IS overload-bit **+ BGP graceful-shutdown (RFC 8326)** drain/undrain — meaningful *because* the fabric is redundant (drain pe1 → CE fails over to pe2; drain rr1 → clients keep rr2).
-- **Progressive rollout** (blast-radius control): `serial: 1` + `any_errors_fatal`.
-- **Evidence-based health gate:** precheck snapshot → deploy → postcheck asserts (IS-IS up, BGP not degraded, change present) — rollback on *measured* regression, not a timer.
-- Idempotent, role-structured, multi-vendor-ready Ansible (FRR today; Junos/IOS-XR/EOS branches noted).
+## 1. Install the tools (one-time)
 
----
-
-## Repo layout
-```
-netops-lab/
-├── clab/                       # containerlab topology + FRR node configs
-│   ├── stage1.clab.yml         # 7-node topology (nodes + links)
-│   ├── daemons                 # FRR daemons (zebra+bgpd+isisd), mounted to every node
-│   ├── vtysh.conf              # silences vtysh warning
-│   └── configs/<node>/frr.conf # per-node config
-└── ansible/                    # safe-change pipeline
-    ├── ansible.cfg
-    ├── requirements.yml        # community.docker, ansible.netcommon
-    ├── inventory/hosts.yml      # docker-exec connection → clab-stage1-* (no SSH)
-    │   └── group_vars/all.yml
-    ├── roles/{drain,precheck,deploy,postcheck,compliance}/
-    └── playbooks/{site.yml,compliance-check.yml}
-```
-
----
-
-## Prerequisites & install
-
-**1. Docker** (engine running):
 ```bash
+# Docker — must be installed and running
 docker --version
-```
 
-**2. containerlab:**
-```bash
+# containerlab — builds the topology
 bash -c "$(curl -sL https://get.containerlab.dev)"
 clab version
-```
 
-**3. Ansible + collections:**
-```bash
-python3 -m pip install --upgrade ansible          # or: pipx install --include-deps ansible
+# Ansible — automates changes
+python3 -m pip install --upgrade ansible paramiko    # paramiko = SSH for VyOS
 ansible --version
-cd ansible
-ansible-galaxy collection install -r requirements.yml   # community.docker, ansible.netcommon
+
+# pull the router images (first time only)
+docker pull ghcr.io/sysoleg/vyos-container:latest    # core (VyOS)
+docker pull frrouting/frr:latest                     # customers (FRR)
 ```
-> The Ansible→device path uses **`community.docker.docker`** (docker exec) — no SSH on the FRR containers. The docker connection plugin uses the `docker` CLI, no Python SDK needed.
 
 ---
 
-## Run the lab
+## 2. Start the lab
+
 ```bash
 cd clab
-sudo containerlab deploy -t stage1.clab.yml
-sudo containerlab inspect -t stage1.clab.yml
+sudo containerlab deploy -t stage1.clab.yml          # boots all 10 routers + wiring (~1–2 min)
+sudo containerlab inspect -t stage1.clab.yml         # list nodes + status
 ```
-
-Verify the control plane:
+VyOS takes ~30–60 s to boot. If iBGP looks stuck right after deploy (a startup race), reset it once:
 ```bash
-docker exec clab-stage1-pe1 vtysh -c "show isis neighbor"               # pe1 sees p1 AND p2
-docker exec clab-stage1-rr1 vtysh -c "show bgp ipv4 unicast summary"    # rr1: 4 clients + rr2
-docker exec clab-stage1-rr2 vtysh -c "show bgp ipv4 unicast summary"    # rr2: 4 clients + rr1
-docker exec clab-stage1-pe1 vtysh -c "show ip route 203.0.113.0/24"     # ce2 prefix (ECMP via pe2 paths)
-docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1        # customer-to-customer
+for n in rr1 rr2 p1 p2 pe1 pe2 pe3 pe4; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done
 ```
-> Fresh deploys can hit an iBGP startup race (BGP before IS-IS converges). Fix once: `for n in rr1 rr2 p1 p2 pe1 pe2 pe3 pe4; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done`.
 
-**Redundancy / drain demo** (what 2 RRs + dual-homing + 2 sites buys you):
+**Check it works** (customer-to-customer reachability across the whole fabric):
 ```bash
-cd ../ansible
-# drain one PE (IS-IS overload + BGP graceful-shutdown) — CE traffic shifts to its pair, no outage:
-ansible-playbook playbooks/site.yml -e target=pe1
-# roll a whole site as a wave (one PE at a time, gate between):
-ansible-playbook playbooks/site.yml -e target=site_b
-# meanwhile customer-to-customer keeps working (ce1 site-A ↔ ce2 site-B):
-docker exec clab-stage1-ce1 ping -c3 -I 198.51.100.1 203.0.113.1
+docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1
 ```
 
-Teardown:
+**Stop / delete the lab:**
 ```bash
 sudo containerlab destroy -t stage1.clab.yml --cleanup
 ```
 
 ---
 
-## Run the Ansible pipeline
-```bash
-cd ansible
-ansible-galaxy collection install -r requirements.yml   # vyos.vyos, community.docker, ansible.netcommon
-ansible-playbook playbooks/facts.yml      # VyOS core reachability over SSH (vyos.vyos)
-ansible-playbook playbooks/site.yml       # full safe change on the core (serial:1)
+## 3. Connect to a node manually
 
-# selective:
-ansible-playbook playbooks/site.yml --tags precheck       # snapshot only
-ansible-playbook playbooks/site.yml -e target=p1          # one node
-ansible-playbook playbooks/compliance-check.yml           # audit (read-only)
+containerlab adds `/etc/hosts` entries, so every node is reachable by name `clab-stage1-<node>`.
+
+**VyOS core nodes — via SSH** (user `vyos`, password `vyos`):
+```bash
+ssh vyos@clab-stage1-rr1
+# then, in the VyOS prompt:
+show bgp summary            # BGP neighbors / state
+show isis neighbor          # IS-IS adjacencies
+show ip route               # routing table
+configure                   # enter config mode
+  set ...                   # make a change
+  commit                    # apply
+  exit
+exit
 ```
-Artifacts (per node) land in `ansible/artifacts/` (gitignored): `precheck_*.txt`, `postcheck_*.txt`, `compliance_*.txt`.
 
-### Safe rolling reboot (zero customer-traffic loss)
+**Any node — via Docker (no SSH needed), using FRR's `vtysh`** (works on VyOS too, FRR runs underneath):
 ```bash
-ansible-playbook playbooks/safe-reboot.yml            # reboot every core node, one at a time
+docker exec -it clab-stage1-pe1 vtysh        # interactive routing CLI
+# or one-off:
+docker exec clab-stage1-rr1 vtysh -c "show bgp ipv4 unicast summary"
+docker exec clab-stage1-ce1 vtysh -c "show ip route"
+```
+
+**Customer (FRR) nodes** have no SSH — use docker exec:
+```bash
+docker exec -it clab-stage1-ce1 vtysh
+docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1
+```
+
+> Tip: container names are `clab-stage1-<node>` (e.g. `clab-stage1-pe3`). `docker ps` lists them all.
+
+---
+
+## 4. The Ansible automation
+
+```bash
+cd ../ansible
+ansible-galaxy collection install -r requirements.yml   # vyos.vyos + community.docker + ansible.netcommon (one-time)
+```
+
+Ansible reads `inventory/hosts.yml`, which knows two groups:
+- **`core`** (the 8 VyOS routers) — reached over **SSH** with the `vyos.vyos` driver,
+- **`ce`** (the 2 FRR customers) — reached via **docker exec**.
+
+You don't pass IPs or passwords on the command line — they live in the inventory. You just run a playbook.
+
+### The four playbooks
+
+| Playbook | What it does | Changes the network? | Run it when… |
+|----------|--------------|----------------------|--------------|
+| `facts.yml` | Connectivity check — logs into every core router and prints its version + BGP summary. | No | You want to confirm Ansible can reach the lab. |
+| `site.yml` | **Safe config change** — for each node, one at a time: drain → snapshot → change → verify → restore. Stops the whole run if any health check fails. | Yes (a demo route) | You want to push a change safely. |
+| `safe-reboot.yml` | **Zero-loss rolling reboot** — reboots every router one at a time while a non-stop ping proves not a single packet is lost. | Reboots only | You need to restart/upgrade routers without an outage. |
+| `compliance-check.yml` | **Audit** — checks every router has the mandatory config (IS-IS, BGP, loopback). Read-only. | No | Daily/scheduled hygiene check. |
+
+#### `facts.yml` — "can Ansible see the lab?"
+```bash
+ansible-playbook playbooks/facts.yml
+```
+Logs into each VyOS node over SSH, prints `… reachable — VyOS … (rr1)` and a BGP line. If this works, everything else will. **Always run this first.**
+
+#### `site.yml` — safe change, one node at a time
+```bash
+ansible-playbook playbooks/site.yml                 # all core nodes, one by one
+ansible-playbook playbooks/site.yml -e target=pe1   # just one node
+ansible-playbook playbooks/site.yml -e target=site_b   # just site-B's PEs
+ansible-playbook playbooks/site.yml --tags precheck    # only take the "before" snapshot
+```
+Per node, in order: **drain** (steer traffic away) → **precheck** (snapshot IS-IS/BGP, assert healthy) → **deploy** (push the change — a harmless blackhole route in the demo) → **postcheck** (re-check; if IS-IS dropped, BGP degraded, or the change didn't apply → **fail and stop**) → **undrain** (put it back). `serial: 1` + `any_errors_fatal` = one device at a time, halt on the first problem (blast-radius control).
+
+#### `safe-reboot.yml` — reboot without dropping a packet
+```bash
+ansible-playbook playbooks/safe-reboot.yml                 # whole core, one at a time
 ansible-playbook playbooks/safe-reboot.yml -e target=site_b
 ```
-Per node (`serial:1` + `any_errors_fatal`): **start a continuous ce1↔ce2 probe in the background → drain → restart FRR (RP reload) → wait until FRR + all BGP sessions are back → undrain → stop the probe → GATE: the probe that spanned the whole window must show 0% loss.** The ICMP measurement runs **in parallel** with the convergence window (0.2 s interval → a single lost packet shows), so it proves zero loss *during* the reboot, not just after. "Reboot" restarts the routing stack only — container/netns/interfaces stay up (real RP-reload analog; swap for `docker restart` for a full power-cycle). Zero loss holds because the fabric is redundant **and** transit nodes carry `set-overload-bit on-startup 90` (a freshly-restarted node stays out of transit until BGP converges).
+Per node: starts a **continuous ce1↔ce2 ping in the background**, drains the node, **restarts its routing stack** (`systemctl restart frr` inside VyOS — container & SSH stay up), waits for all BGP sessions to come back, undrains, then stops the ping and **asserts 0% loss across the whole window**. Watch it live in another terminal:
+```bash
+docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1
+```
+
+#### `compliance-check.yml` — audit
+```bash
+ansible-playbook playbooks/compliance-check.yml
+```
+Pulls each router's config and asserts the must-haves (IS-IS, BGP, loopback) are present; writes a report to `artifacts/`. Doesn't change anything.
+
+Run results/snapshots are written to **`ansible/artifacts/`** (`precheck_*.txt`, `postcheck_*.txt`, `compliance_*.txt`).
 
 ---
 
-## Ansible structure & hierarchy
+## Roles (reusable building blocks)
+The playbooks are assembled from small single-purpose roles in `ansible/roles/`:
 
-**Inventory groups** (`inventory/hosts.yml`): `core` = {rr1,p1,p2,pe1,pe2} (IS-IS+iBGP, drain applies), `ce` = {ce1,ce2} (eBGP only). Connection = `community.docker.docker`, `ansible_host` = container name.
-
-**Vars hierarchy:** `group_vars/all.yml` (thresholds, waits, demo route) → role `defaults/` → `-e` overrides. Connection vars set at group level so playbooks stay vendor-agnostic.
-
-**Roles (one job each):**
-| Role | Action | Touches device |
-|------|--------|----------------|
-| `drain` | IS-IS `set-overload-bit` ↔ `no set-overload-bit` (make-before-break) | write |
+| Role | Job | Touches device |
+|------|-----|----------------|
+| `drain` | make-before-break: set/clear IS-IS overload-bit + BGP graceful-shutdown | write |
 | `precheck` | snapshot IS-IS/BGP/routes → artifact; assert adjacency Up | read |
-| `deploy` | push change (demo: blackhole `100.64.0.0/24`; prod slot = rendered config) | write |
-| `postcheck` | re-read; **gate**: IS-IS up, BGP not degraded, change present | read |
-| `compliance` | semantic checks: IS-IS / router-id / loopback | read |
+| `deploy` | push the change (demo: blackhole `100.64.0.0/24`) | write |
+| `postcheck` | re-read state; **gate**: IS-IS up, BGP not degraded, change present | read |
+| `compliance` | assert mandatory config present (IS-IS / BGP / loopback) | read |
+
+`drain`/`undrain` are pure traffic-steering (no reboot). `site.yml` puts **deploy** between them; `safe-reboot.yml` puts a **reboot** between them.
 
 ---
 
-## The change pipeline (what `site.yml` does)
-
+## Repo layout
 ```
-        per node, serial:1, any_errors_fatal
-   ┌───────────────────────────────────────────────┐
-   │ DRAIN ─► PRECHECK ─► DEPLOY ─► POSTCHECK ─► UNDRAIN │
-   │  (overload   (snapshot  (push    (GATE:        (clear   │
-   │   -bit)      +assert)   change)   assert)       overload)│
-   └───────────────────────────────────────────────┘
-            │ gate PASS                 │ gate FAIL
-            ▼                           ▼
-        next node                  STOP rollout (any_errors_fatal)
+netops-containerlab-ansible/
+├── clab/
+│   ├── stage1.clab.yml             # topology: 10 nodes + 17 links
+│   ├── daemons / vtysh.conf        # FRR helpers (CE nodes)
+│   └── configs/<node>/             # per-node config:
+│       ├── <core>/config.boot      #   VyOS (set-style) for pe*/p*/rr*
+│       └── <ce>/frr.conf           #   FRR for ce1/ce2
+├── ansible/
+│   ├── ansible.cfg
+│   ├── requirements.yml            # vyos.vyos, community.docker, ansible.netcommon
+│   ├── inventory/hosts.yml         # core=VyOS/SSH, ce=FRR/docker
+│   │   └── group_vars/all.yml
+│   ├── roles/{drain,precheck,deploy,postcheck,compliance}/
+│   └── playbooks/{facts,site,safe-reboot,compliance-check}.yml
+└── docs/topology.{svg,drawio}      # network diagram
 ```
-
-- **Drain first (make-before-break):** the node stops being IS-IS transit before it's changed, so the change is non-disruptive. Undrain restores it after the gate passes.
-- **Deterministic gate:** the `postcheck` asserts own go/no-go. On FRR the drain primitive is `set-overload-bit`; on a production SP core it's IS-IS overload + BGP graceful-shutdown (RFC 8326).
-- **Blast radius:** `serial: 1` changes one device per wave; `any_errors_fatal` halts the whole rollout on the first failed gate.
-
-This mirrors the Google/Meta/Microsoft pattern: **render → validate → canary → wave → fleet** with automatic stop/rollback.
 
 ---
 
-## Production mapping (FRR lab → real SP)
-| Lab (FRR) | Production |
-|-----------|------------|
-| docker-exec + vtysh | NETCONF/RESTCONF/gNMI |
-| IS-IS `set-overload-bit` | + BGP graceful-shutdown (RFC 8326) |
-| `deploy` blackhole demo | rendered config from NetBox+Jinja2 (`junos_config`/NAPALM) |
-| postcheck asserts | gNMI golden-signal health gate + Batfish differential / impact report |
-| `serial:1` | canary → wave-by-failure-domain → fleet |
+## Production mapping (lab → real SP)
+| Lab | Production |
+|-----|-----------|
+| VyOS / FRR containers | Juniper MX / Cisco IOS-XR / Arista |
+| SSH `vyos.vyos` / docker exec | NETCONF / RESTCONF / gNMI |
+| `deploy` blackhole demo | rendered config from NetBox + Jinja2 |
+| postcheck asserts | gNMI golden-signal health gate + Batfish differential |
+| `serial: 1` | canary → wave-by-failure-domain → fleet |
 
 ---
 
