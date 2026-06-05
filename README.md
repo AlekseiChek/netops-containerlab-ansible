@@ -7,6 +7,29 @@ It builds a small but realistic **service-provider fabric** (IS-IS + iBGP + rout
 
 ---
 
+## ⚡ Quick start (3 commands)
+
+> Prereqs: **Docker**, **containerlab**, and **Ansible** installed (see [§1 Install the tools](#1-install-the-tools-one-time) if you don't have them).
+
+```bash
+# 1) get the lab
+git clone https://github.com/AlekseiChek/netops-containerlab-ansible
+# 2) build the whole topology (10 routers + wiring, ~1–2 min)
+cd netops-containerlab-ansible/clab && sudo containerlab deploy -t stage1.clab.yml
+# 3) prove a zero-loss rolling reboot of the core
+cd ../ansible && ansible-galaxy collection install -r requirements.yml && ansible-playbook playbooks/safe-reboot.yml
+```
+
+Want to watch it live? In a second terminal, run a non-stop customer-to-customer ping while step 3 reboots the core:
+```bash
+docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1
+```
+The playbook drains → reboots → restores each router one at a time and **asserts 0% packet loss** at the end. Tear it all down with `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`.
+
+The rest of this README explains every step in detail — start there if you're new to Ansible or containers.
+
+---
+
 ## Network scheme
 
 ![Network topology](docs/topology.svg)
