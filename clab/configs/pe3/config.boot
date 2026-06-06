@@ -103,6 +103,9 @@ vrf {
         protocols {
             bgp {
                 system-as 65000
+                parameters {
+                    router-id 192.0.2.3
+                }
                 address-family {
                     ipv4-unicast {
                         export vpn

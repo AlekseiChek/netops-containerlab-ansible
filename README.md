@@ -10,6 +10,13 @@ It builds a small but realistic **service-provider fabric** (IS-IS wide-metric +
 ## ⚡ Quick start (3 commands)
 
 > Prereqs: **Docker**, **containerlab**, and **Ansible** installed (see [§1 Install the tools](#1-install-the-tools-one-time) if you don't have them).
+>
+> **Host MPLS prerequisite** (one-time, needed for SR-MPLS/L3VPN forwarding):
+> ```bash
+> sudo modprobe mpls_router mpls_iptunnel
+> echo -e "mpls_router\nmpls_iptunnel" | sudo tee /etc/modules-load.d/mpls.conf   # persist
+> ```
+> The topology then sizes each node's MPLS label space automatically (`net.mpls.platform_labels`). Without the host modules, `show mpls table` stays empty and the VPNv4 sessions to the PEs won't come up.
 
 ```bash
 # 1) get the lab

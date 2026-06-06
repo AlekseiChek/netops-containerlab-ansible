@@ -16,6 +16,12 @@ topology:
   defaults:
     kind: linux
     image: frrouting/frr:latest
+    # MPLS dataplane: size the per-netns label space at container creation (before
+    # FRR starts) so SR-MPLS LSPs program from boot. HOST PREREQ on the clab host:
+    #   sudo modprobe mpls_router mpls_iptunnel
+    # (per-interface net.mpls.conf.ethX.input is set by VyOS 'protocols mpls interface'.)
+    sysctls:
+      net.mpls.platform_labels: 1048575
   nodes:
     # --- core: VyOS (sysoleg/vyos-container), config.boot bind-mounted ---
     rr1: { kind: linux, image: ghcr.io/sysoleg/vyos-container:latest, binds: ["configs/rr1/config.boot:/opt/vyatta/etc/config/config.boot"], labels: {role: rr, location: core, nos: vyos} }
