@@ -108,8 +108,12 @@ vrf {
                 }
                 address-family {
                     ipv4-unicast {
-                        export vpn
-                        import vpn
+                        export {
+                            vpn
+                        }
+                        import {
+                            vpn
+                        }
                         label {
                             vpn {
                                 export auto
