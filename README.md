@@ -1,7 +1,7 @@
 # netops-lab — redundant SP fabric (VyOS + FRR) with a safe Ansible change pipeline
 
 A self-contained **network operations lab** you can run on a laptop or NAS — **no licenses, no KVM, just Docker**.
-It builds a small but realistic **service-provider fabric** (IS-IS + iBGP + route reflectors + dual-homed customers) and ships an **Ansible pipeline** that changes and reboots it the way real carriers do: **drain traffic → change → verify → restore**, one device at a time, stopping automatically if anything degrades.
+It builds a small but realistic **service-provider fabric** (IS-IS wide-metric + **SR-MPLS** + **TI-LFA** + route reflectors + **MPLS L3VPN** for dual-homed customers) and ships an **Ansible pipeline** that changes and reboots it the way real carriers do: **drain traffic → change → verify → restore**, one device at a time, stopping automatically if anything degrades.
 
 > New to this? You only need three tools — **Docker** (runs the routers as containers), **containerlab** (wires them into a topology from one file), and **Ansible** (automates changes). Step-by-step install is below; you can copy-paste everything.
 
@@ -39,17 +39,44 @@ The rest of this README explains every step in detail — start there if you're 
 - **Core (8 × VyOS):** `p1`/`p2` (P routers), `rr1`/`rr2` (route reflectors), `pe1`–`pe4` (provider edge).
 - **Customers (2 × FRR):** `ce1`, `ce2` — each **dual-homed** to two PEs.
 - **Two sites:** site-A = `ce1`↔`pe1`/`pe2`, site-B = `ce2`↔`pe3`/`pe4` → you can roll changes **site by site**.
-- **IGP:** IS-IS Level 2 (area `49.0001`); every PE and RR is **dual-attached** to both P routers.
-- **Overlay:** iBGP AS `65000`, **two route reflectors** (no single point of failure); customers ride eBGP.
+- **IGP:** IS-IS Level 2 (area `49.0001`), **wide metrics**; every PE and RR is **dual-attached** to both P routers.
+- **Transport:** **Segment Routing MPLS** (SRGB `16000–23999`, a prefix-SID per loopback) + **TI-LFA** fast-reroute on every core link.
+- **Overlay:** iBGP AS `65000`, **two route reflectors** (no single point of failure) reflecting both IPv4 and **VPNv4**.
+- **Customer service:** **MPLS L3VPN** — `ce1` and `ce2` live in **one shared VRF `CUST`** (route-target `65000:100`), so they reach each other over the VPN, not the global table.
 
-| Node | Role | NOS | Site | Loopback |
-|------|------|-----|------|----------|
-| pe1–pe2 | PE | VyOS | site-A | 192.0.2.1 / .2 |
-| pe3–pe4 | PE | VyOS | site-B | 192.0.2.3 / .4 |
-| p1 / p2 | P (core) | VyOS | core | 192.0.2.11 / .12 |
-| rr1 / rr2 | Route Reflector | VyOS | core | 192.0.2.101 / .102 |
-| ce1 | Customer (→ pe1/pe2) | FRR | site-A | 198.51.100.1 |
-| ce2 | Customer (→ pe3/pe4) | FRR | site-B | 203.0.113.1 |
+| Node | Role | NOS | Site | Loopback | SR prefix-SID |
+|------|------|-----|------|----------|---------------|
+| pe1–pe2 | PE | VyOS | site-A | 192.0.2.1 / .2 | 16001 / 16002 |
+| pe3–pe4 | PE | VyOS | site-B | 192.0.2.3 / .4 | 16003 / 16004 |
+| p1 / p2 | P (core) | VyOS | core | 192.0.2.11 / .12 | 16011 / 16012 |
+| rr1 / rr2 | Route Reflector | VyOS | core | 192.0.2.101 / .102 | 16101 / 16102 |
+| ce1 | Customer (VRF CUST → pe1/pe2) | FRR | site-A | 198.51.100.1 | — |
+| ce2 | Customer (VRF CUST → pe3/pe4) | FRR | site-B | 203.0.113.1 | — |
+
+---
+
+## SP feature set (and how to verify it)
+
+The core runs a realistic operator feature stack. **Why these:** wide metrics are a prerequisite for SR; SR-MPLS gives every loopback a global label so L3VPN doesn't need LDP; TI-LFA gives sub-50 ms local repair; L3VPN keeps customer routes in a VRF instead of the global table.
+
+| Feature | Where | Verify |
+|---------|-------|--------|
+| IS-IS **wide metric** | all core | `docker exec clab-stage1-p1 vtysh -c "show isis database detail"` |
+| **Segment Routing (SR-MPLS)** | all core | `docker exec clab-stage1-pe1 vtysh -c "show isis segment-routing prefix-sids"` |
+| **TI-LFA** fast-reroute | all core links | `docker exec clab-stage1-p1 vtysh -c "show isis fast-reroute summary"` |
+| **MPLS** label switching | all core | `docker exec clab-stage1-p1 vtysh -c "show mpls table"` |
+| **L3VPN (VPNv4)** | PEs + RRs | `docker exec clab-stage1-pe1 vtysh -c "show bgp ipv4 vpn summary"` |
+| **same VRF CUST** | PEs | `docker exec clab-stage1-pe1 vtysh -c "show ip route vrf CUST"` |
+
+**Proof the two customers share one VRF** — `ce1` should learn `ce2`'s prefix (and vice-versa) and ping it end-to-end over the L3VPN:
+```bash
+docker exec clab-stage1-ce1 vtysh -c "show ip route 203.0.113.0/24"   # learned via L3VPN
+docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1      # CE1 -> CE2 across the VPN
+```
+
+> **EVPN-MPLS?** Not available: VyOS/FRR implement EVPN over **VXLAN only** (no MPLS data plane for L2VPN/EVPN). So customers use **MPLS L3VPN**, which VyOS fully supports.
+>
+> **SR-TE** is only at *initial* support in VyOS rolling (May 2026) and the policy-attach syntax isn't documented yet — so it's shipped as an optional, clearly-marked demo in [`clab/configs/sr-te-demo.set`](clab/configs/sr-te-demo.set) (paste-in, **not** in the boot config, so it can never break the lab).
 
 ---
 

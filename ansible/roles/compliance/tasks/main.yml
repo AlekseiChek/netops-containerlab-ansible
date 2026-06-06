@@ -16,6 +16,26 @@
     that: "'protocols bgp' in cfg.stdout[0]"
     fail_msg: "{{ inventory_hostname }}: BGP not configured"
 
+- name: IS-IS wide metric-style enabled
+  ansible.builtin.assert:
+    that: "'isis metric-style wide' in cfg.stdout[0]"
+    fail_msg: "{{ inventory_hostname }}: IS-IS not using wide metrics"
+
+- name: Segment Routing (SR-MPLS) enabled
+  ansible.builtin.assert:
+    that: "'isis segment-routing' in cfg.stdout[0]"
+    fail_msg: "{{ inventory_hostname }}: IS-IS segment-routing not configured"
+
+- name: TI-LFA fast-reroute enabled
+  ansible.builtin.assert:
+    that: "'fast-reroute ti-lfa' in cfg.stdout[0]"
+    fail_msg: "{{ inventory_hostname }}: TI-LFA not configured"
+
+- name: MPLS forwarding enabled
+  ansible.builtin.assert:
+    that: "'protocols mpls interface' in cfg.stdout[0]"
+    fail_msg: "{{ inventory_hostname }}: MPLS not enabled on interfaces"
+
 - name: Loopback present
   ansible.builtin.assert:
     that: "'loopback lo' in cfg.stdout[0]"
@@ -26,5 +46,5 @@
   ansible.builtin.copy:
     dest: "{{ artifacts_dir }}/compliance_{{ inventory_hostname }}.txt"
     content: |
-      Compliance {{ inventory_hostname }} — IS-IS / BGP / loopback present: OK
+      Compliance {{ inventory_hostname }} — IS-IS(wide) / SR-MPLS / TI-LFA / MPLS / BGP / loopback present: OK
   delegate_to: localhost

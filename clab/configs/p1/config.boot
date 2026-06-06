@@ -35,29 +35,106 @@ protocols {
     isis {
         net 49.0001.1920.0000.2011.00
         level level-2
+        metric-style wide
         interface eth1 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface eth2 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface eth3 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface eth4 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface eth5 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface eth6 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface eth7 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface lo {
             passive
+        }
+        segment-routing {
+            global-block {
+                low-label-value 16000
+                high-label-value 23999
+            }
+            prefix 192.0.2.11/32 {
+                index {
+                    value 11
+                }
+            }
+        }
+    }
+    mpls {
+        interface eth1 {
+        }
+        interface eth2 {
+        }
+        interface eth3 {
+        }
+        interface eth4 {
+        }
+        interface eth5 {
+        }
+        interface eth6 {
+        }
+        interface eth7 {
         }
     }
     bgp {

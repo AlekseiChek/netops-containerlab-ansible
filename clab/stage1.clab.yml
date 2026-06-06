@@ -1,8 +1,17 @@
 name: stage1
-# Redundant 2-site SP fabric (Full-FRR):
+# Redundant 2-site SP fabric — VyOS core (SR-MPLS) + FRR customers:
 #   site-A: ce1 dual-homed to pe1+pe2   |   site-B: ce2 dual-homed to pe3+pe4
-#   core: p1/p2 (IS-IS L2) + 2 route reflectors rr1/rr2 (iBGP, redundant).
+#   core: p1/p2 (IS-IS L2) + 2 route reflectors rr1/rr2 (iBGP + VPNv4, redundant).
 #   All PEs and RRs are dual-attached to BOTH p1 and p2.  10 nodes, 17 links.
+#
+# SP feature set (VyOS core):
+#   - IS-IS L2, metric-style WIDE
+#   - Segment Routing MPLS (SRGB 16000-23999, prefix-SID per loopback)
+#   - TI-LFA fast-reroute (level-2, node-protection) on every core link
+#   - MPLS forwarding enabled on all core interfaces
+#   - MPLS L3VPN: ce1 + ce2 share ONE VRF "CUST" (RT 65000:100) via VPNv4/RRs
+#   - SR-TE: documented demo only -> clab/configs/sr-te-demo.set (not in boot)
+#   EVPN-MPLS is NOT supported by VyOS/FRR (EVPN is VXLAN-only) -> L3VPN used.
 topology:
   defaults:
     kind: linux

@@ -10,6 +10,7 @@ interfaces {
     ethernet eth3 {
         address 10.1.1.2/31
         mtu 9500
+        vrf CUST
     }
     loopback lo {
         address 192.0.2.2/32
@@ -19,14 +20,46 @@ protocols {
     isis {
         net 49.0001.1920.0000.2002.00
         level level-2
+        metric-style wide
         interface eth1 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface eth2 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface lo {
             passive
+        }
+        segment-routing {
+            global-block {
+                low-label-value 16000
+                high-label-value 23999
+            }
+            prefix 192.0.2.2/32 {
+                index {
+                    value 2
+                }
+            }
+        }
+    }
+    mpls {
+        interface eth1 {
+        }
+        interface eth2 {
         }
     }
     bgp {
@@ -42,6 +75,10 @@ protocols {
                     nexthop-self {
                     }
                 }
+                ipv4-vpn {
+                    nexthop-self {
+                    }
+                }
             }
         }
         neighbor 192.0.2.102 {
@@ -52,12 +89,47 @@ protocols {
                     nexthop-self {
                     }
                 }
+                ipv4-vpn {
+                    nexthop-self {
+                    }
+                }
             }
         }
-        neighbor 10.1.1.3 {
-            remote-as 65001
-            address-family {
-                ipv4-unicast {
+    }
+}
+vrf {
+    name CUST {
+        table 100
+        protocols {
+            bgp {
+                system-as 65000
+                address-family {
+                    ipv4-unicast {
+                        export vpn
+                        import vpn
+                        label {
+                            vpn {
+                                export auto
+                            }
+                        }
+                        rd {
+                            vpn {
+                                export 192.0.2.2:100
+                            }
+                        }
+                        route-target {
+                            vpn {
+                                both 65000:100
+                            }
+                        }
+                    }
+                }
+                neighbor 10.1.1.3 {
+                    remote-as 65001
+                    address-family {
+                        ipv4-unicast {
+                        }
+                    }
                 }
             }
         }

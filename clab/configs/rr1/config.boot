@@ -15,14 +15,46 @@ protocols {
     isis {
         net 49.0001.1920.0000.2101.00
         level level-2
+        metric-style wide
         interface eth1 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface eth2 {
             network point-to-point
+            fast-reroute {
+                ti-lfa {
+                    level-2 {
+                        node-protection
+                    }
+                }
+            }
         }
         interface lo {
             passive
+        }
+        segment-routing {
+            global-block {
+                low-label-value 16000
+                high-label-value 23999
+            }
+            prefix 192.0.2.101/32 {
+                index {
+                    value 101
+                }
+            }
+        }
+    }
+    mpls {
+        interface eth1 {
+        }
+        interface eth2 {
         }
     }
     bgp {
@@ -36,6 +68,10 @@ protocols {
             update-source lo
             address-family {
                 ipv4-unicast {
+                    route-reflector-client {
+                    }
+                }
+                ipv4-vpn {
                     route-reflector-client {
                     }
                 }
@@ -64,6 +100,8 @@ protocols {
             update-source lo
             address-family {
                 ipv4-unicast {
+                }
+                ipv4-vpn {
                 }
             }
         }

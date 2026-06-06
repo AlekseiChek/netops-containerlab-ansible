@@ -1,0 +1,26 @@
+# ───────────────────────────────────────────────────────────────────────────
+# SR-TE demo (OPTIONAL, bleeding-edge) — paste into pe1, do NOT bake into boot
+# ───────────────────────────────────────────────────────────────────────────
+# VyOS only gained *initial* SR-TE support in the rolling release (May 2026,
+# vyos.dev/T6750). The policy-attach mechanism is not yet documented, so this is
+# kept OUT of config.boot to guarantee the lab still boots. Treat as a teaching
+# artifact: it builds an explicit segment-list pe1 -> p2 -> pe3 (instead of the
+# IGP-shortest pe1 -> p1 -> pe3). Requires a recent rolling vyos-container image.
+#
+# Prefix-SID label map (SRGB base 16000):
+#   pe1=16001 pe2=16002 pe3=16003 pe4=16004  p1=16011 p2=16012  rr1=16101 rr2=16102
+#
+# Apply on pe1:
+#   ssh vyos@clab-stage1-pe1     (password: vyos)
+#   configure
+
+set protocols segment-routing traffic-engineering database-import-protocol isis
+set protocols segment-routing traffic-engineering segment-list TO-PE3-VIA-P2 index value 10 mpls label 16012
+set protocols segment-routing traffic-engineering segment-list TO-PE3-VIA-P2 index value 20 mpls label 16003
+
+#   commit ; save ; exit
+#
+# Verify (FRR pathd is the engine underneath VyOS):
+#   docker exec clab-stage1-pe1 vtysh -c "show segment-routing traffic-eng segment-list"
+#   docker exec clab-stage1-pe1 vtysh -c "show mpls table"
+# ───────────────────────────────────────────────────────────────────────────
