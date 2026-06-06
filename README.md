@@ -1,7 +1,9 @@
-# netops-lab — redundant SP fabric (VyOS + FRR) with a safe Ansible change pipeline
+# netops-containerlab-ansible-mpls
 
-A self-contained **network operations lab** you can run on a laptop or NAS — **no licenses, no KVM, just Docker**.
-It builds a small but realistic **service-provider fabric** (IS-IS wide-metric + **SR-MPLS** + **TI-LFA** + route reflectors + **MPLS L3VPN** for dual-homed customers) and ships an **Ansible pipeline** that changes and reboots it the way real carriers do: **drain traffic → change → verify → restore**, one device at a time, stopping automatically if anything degrades.
+**Redundant SP fabric with SR-MPLS, TI-LFA and MPLS L3VPN — deployable from a single clone, provably zero-loss under Ansible automation.**
+
+A self-contained **network operations lab** you can run on a laptop, NAS or EVE-NG host — **no licenses, no hardware, just Docker**.
+It builds a realistic **service-provider fabric**: IS-IS wide-metric core, **Segment Routing MPLS** transport, **TI-LFA** fast-reroute on every link, redundant route reflectors, and an **MPLS L3VPN** that puts both customer sites in one shared VRF. On top of that sits an **Ansible pipeline** that changes and reboots the fabric the way real carriers do: **drain → change → verify → restore**, one device at a time, stopping automatically if anything degrades.
 
 > New to this? You only need three tools — **Docker** (runs the routers as containers), **containerlab** (wires them into a topology from one file), and **Ansible** (automates changes). Step-by-step install is below; you can copy-paste everything.
 
@@ -10,19 +12,13 @@ It builds a small but realistic **service-provider fabric** (IS-IS wide-metric +
 ## ⚡ Quick start (3 commands)
 
 > Prereqs: **Docker**, **containerlab**, and **Ansible** installed (see [§1 Install the tools](#1-install-the-tools-one-time) if you don't have them).
->
-> **Host MPLS prerequisite** (one-time, needed for SR-MPLS/L3VPN forwarding):
-> ```bash
-> sudo modprobe mpls_router mpls_iptunnel
-> echo -e "mpls_router\nmpls_iptunnel" | sudo tee /etc/modules-load.d/mpls.conf   # persist
-> ```
-> The topology then sizes each node's MPLS label space automatically (`net.mpls.platform_labels`). Without the host modules, `show mpls table` stays empty and the VPNv4 sessions to the PEs won't come up.
+> **MPLS kernel modules must be loaded on the host** — see [§ Host MPLS setup](#host-mpls-setup-required-for-sr-mpls--l3vpn) just below.
 
 ```bash
 # 1) get the lab
-git clone https://github.com/AlekseiChek/netops-containerlab-ansible
+git clone https://github.com/AlekseiChek/netops-containerlab-ansible-mpls
 # 2) build the whole topology (10 routers + wiring, ~1–2 min)
-cd netops-containerlab-ansible/clab && sudo containerlab deploy -t stage1.clab.yml
+cd netops-containerlab-ansible-mpls/clab && sudo containerlab deploy -t stage1.clab.yml
 # 3) prove a zero-loss rolling reboot of the core
 cd ../ansible && ansible-galaxy collection install -r requirements.yml && ansible-playbook playbooks/safe-reboot.yml
 ```
@@ -34,6 +30,60 @@ docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1
 The playbook drains → reboots → restores each router one at a time and **asserts 0% packet loss** at the end. Tear it all down with `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`.
 
 The rest of this README explains every step in detail — start there if you're new to Ansible or containers.
+
+---
+
+## Host MPLS setup (required for SR-MPLS + L3VPN)
+
+This lab uses **Segment Routing MPLS** as the transport — every router has a prefix-SID label and the L3VPN rides a two-label stack (VPN label + transport label). MPLS label switching happens in the **Linux kernel of the host machine** (not inside the container). The containerlab topology sets `net.mpls.platform_labels` automatically per node, but the kernel modules must be loaded on the host first, or nothing will forward.
+
+### 1 — Check whether modules are already loaded
+```bash
+lsmod | grep mpls
+```
+Expected output (all three needed):
+```
+mpls_router            xxxxx  1 mpls_iptunnel
+mpls_iptunnel          xxxxx  0
+mpls_gso               xxxxx  0
+```
+If the output is empty, continue to step 2.
+
+### 2 — Load the modules (one-time per boot)
+```bash
+sudo modprobe mpls_router mpls_iptunnel mpls_gso
+```
+Verify again with `lsmod | grep mpls` — all three should appear.
+
+### 3 — Persist across reboots
+```bash
+echo -e "mpls_router\nmpls_iptunnel\nmpls_gso" | sudo tee /etc/modules-load.d/mpls.conf
+```
+
+### 4 — Verify the dataplane is working after deploy
+Once the lab is up, run these on any core node:
+```bash
+# LFIB must be non-empty (SR label entries 16000-23999 range)
+docker exec clab-stage1-p1 vtysh -c "show mpls table"
+
+# per-interface MPLS input must be enabled (1 = enabled)
+docker exec clab-stage1-p1 sh -c "sysctl net.mpls.conf.eth1.input net.mpls.conf.eth2.input"
+
+# per-node label space must be 1048575 (set by clab sysctls at deploy)
+docker exec clab-stage1-p1 sysctl net.mpls.platform_labels
+```
+
+### What breaks without MPLS modules
+
+| Symptom | Root cause |
+|---------|-----------|
+| `show mpls table` is empty | `mpls_router` not loaded — FRR can't program the LFIB |
+| VPNv4 sessions to PEs stay in `Connect` | Multi-hop loopbacks need a transit label (e.g. 16001); without LFIB the TCP can't reach them |
+| CE-to-CE ping fails even though BGP is up | The two-label VPN stack (transport + VPN label) can't be forwarded |
+
+> **EVE-NG note:** EVE-NG hosts ship with `mpls_router` available but not loaded by default — run steps 2 and 3 once on the EVE-NG host. The modules are then available to all containerlab deployments.
+>
+> **Laptop/desktop note:** Most standard Ubuntu/Debian/Fedora kernels include these modules. Minimal cloud images or stripped kernels (some VMs) may not — check with `modinfo mpls_router`.
 
 ---
 
